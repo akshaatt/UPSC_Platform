@@ -3,6 +3,7 @@
 @tailwind utilities;
 @import "react-image-crop/dist/ReactCrop.css";
 
+/* 🔹 Disintegrate animation */
 @keyframes disintegrate {
   0% {
     clip-path: inset(0% 0% 0% 0%);
@@ -13,10 +14,11 @@
     opacity: 0;
   }
 }
-
 .animate-disintegrate {
   animation: disintegrate 1.5s forwards ease-in-out;
 }
+
+/* 🔹 Gradient background shift */
 @keyframes gradientShift {
   0% { background-position: 0% 50% }
   50% { background-position: 100% 50% }
@@ -26,10 +28,75 @@
   animation: gradientShift 14s ease-in-out infinite;
 }
 
+/* 🔹 Border shimmer */
 @keyframes borderShimmer {
   0% { transform: translateX(-50%) }
   100% { transform: translateX(150%) }
 }
 .animate-border-shimmer {
   position: relative;
+}
+
+/* Tailwind utilities override */
+@layer utilities {
+  .animate-gradient {
+    background-size: 300% 300%;
+    animation: gradientMove 12s ease infinite;
+  }
+  @keyframes gradientMove {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+}
+
+/* 🔹 Stars background (multi-layer parallax) */
+.stars, .stars2, .stars3 {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: 0;
+  left: 0;
+  background: transparent url("https://www.transparenttextures.com/patterns/stardust.png") repeat top center;
+  animation: moveStars 200s linear infinite;
+}
+.stars2 {
+  background-size: 200px;
+  animation: moveStars 300s linear infinite;
+  opacity: 0.5;
+}
+.stars3 {
+  background-size: 150px;
+  animation: moveStars 400s linear infinite;
+  opacity: 0.3;
+}
+@keyframes moveStars {
+  from { background-position: 0 0; }
+  to { background-position: -10000px 5000px; }
+}
+
+/* 🔹 Shooting stars (multiple streaks) */
+.shooting-star {
+  position: absolute;
+  top: -50px;
+  left: 20%;
+  width: 2px;
+  height: 80px;
+  background: linear-gradient(-45deg, white, rgba(255,255,255,0));
+  border-radius: 999px;
+  transform: rotate(45deg);
+  animation: shootingStar 5s linear infinite;
+}
+.shooting-star:nth-child(2) {
+  left: 60%;
+  animation-delay: 2s;
+}
+.shooting-star:nth-child(3) {
+  left: 80%;
+  animation-delay: 4s;
+}
+
+@keyframes shootingStar {
+  0% { transform: translateX(0) translateY(0) rotate(45deg); opacity: 1; }
+  100% { transform: translateX(1000px) translateY(500px) rotate(45deg); opacity: 0; }
 }

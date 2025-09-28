@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { auth, db } from "./firebase";
@@ -12,6 +11,7 @@ import AiSearch from "./components/AiSearch";
 import ResourceCards from "./components/ResourceCards";
 import AboutUs from "./components/AboutUs";
 import TestPreview from "./components/TestPreview";
+import ToppersTalk from "./components/ToppersTalk"; // ✅ New component
 
 import Library from "./pages/Library";
 import Maps from "./pages/Maps";
@@ -21,13 +21,22 @@ import Tests from "./pages/Tests";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/Dashboard";
 import TopicTests from "./pages/TopicTests";
-import PrelimsTests from "./pages/PrelimsTests"; // ✅ new page
+import PrelimsTests from "./pages/PrelimsTests";
 
 import AuthModal from "./components/AuthModal";
 import SubscriptionPopup from "./components/SubscriptionPopup";
 import UserInfoPopup from "./components/UserInfoPopup";
 
 function HomePage() {
+  // ✅ Dynamic toppers videos list (up to 20)
+  const toppersVideos = [
+    { title: "UPSC Topper’s Strategy 2024", url: "https://www.youtube.com/watch?v=abcd1234xyz" },
+    { title: "How I Cracked UPSC in First Attempt", url: "https://www.youtube.com/watch?v=efgh5678uvw" },
+    { title: "Time Management Tips for Prelims", url: "https://www.youtube.com/watch?v=ijkl9012rst" },
+    { title: "UPSC Interview Guidance", url: "https://www.youtube.com/watch?v=mnop3456qrs" },
+    // 👉 Add more YouTube links (max 20)
+  ];
+
   return (
     <>
       <AnimatedBanner />
@@ -36,8 +45,8 @@ function HomePage() {
       <div className="max-w-5xl mx-auto px-6 py-10 text-center text-gray-700 dark:text-gray-300">
         <h2 className="text-2xl font-bold mb-4">Welcome to Satyapath</h2>
         <p>
-          Explore study rooms, ask your doubts, and access curated UPSC materials.
-          Start your journey today!
+          Explore study rooms, ask your doubts, and access curated UPSC
+          materials. Start your journey today!
         </p>
 
         <AiSearch />
@@ -46,6 +55,9 @@ function HomePage() {
 
       <AboutUs />
       <TestPreview />
+
+      {/* ✅ New Toppers Talk section with stars + gradient + carousel */}
+      <ToppersTalk videos={toppersVideos} />
     </>
   );
 }
@@ -66,7 +78,7 @@ function App() {
       if (u) {
         setUser(u);
 
-        // ✅ realtime updates so subscription / info updates reflect immediately
+        // ✅ Realtime updates so subscription/info changes reflect immediately
         unsubUserDoc = onSnapshot(doc(db, "users", u.uid), (snap) => {
           if (snap.exists()) {
             const data = snap.data();

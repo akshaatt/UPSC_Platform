@@ -1,3 +1,4 @@
+// src/components/Navbar.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth, DEFAULT_AVATAR, db } from "../firebase";
@@ -5,6 +6,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import AuthModal from "./AuthModal";
 import SubscriptionPopup from "./SubscriptionPopup";
+import ContactUsModal from "./ContactUsModal";
 import { motion, AnimatePresence } from "framer-motion";
 
 function Navbar() {
@@ -13,10 +15,11 @@ function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false); // 👈 modal state
   const [plan, setPlan] = useState(null);
   const navigate = useNavigate();
 
-  // Listen to auth + user doc (plan, photoURL, etc.)
+  // Listen to auth + user doc
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -45,7 +48,7 @@ function Navbar() {
     return () => document.removeEventListener("click", closeDropdown);
   }, []);
 
-  const avatarSrc = (user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR);
+  const avatarSrc = user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR;
 
   return (
     <nav className="bg-black shadow-md shadow-gray-800/40 fixed w-full top-0 z-50">
@@ -74,7 +77,7 @@ function Navbar() {
             Downloads
           </button>
           <button
-            onClick={() => navigate("/contact")}
+            onClick={() => setIsContactOpen(true)} // ✅ open modal only
             className="hover:text-[#0090DE] transition"
           >
             Contact Us
@@ -103,13 +106,15 @@ function Navbar() {
                 src={avatarSrc}
                 alt="avatar"
                 className="w-8 h-8 rounded-full object-cover border-2 border-white"
-                onError={(e) => { e.currentTarget.src = DEFAULT_AVATAR; }}
+                onError={(e) => {
+                  e.currentTarget.src = DEFAULT_AVATAR;
+                }}
               />
               {user.displayName || userDoc?.firstName || "User"}
               <span>▼</span>
             </button>
 
-            {/* Animated Dropdown */}
+            {/* Dropdown */}
             <AnimatePresence>
               {dropdownOpen && (
                 <motion.div
@@ -117,13 +122,12 @@ function Navbar() {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3, ease: [0.42, 0, 0.58, 1] }}
+                  transition={{ duration: 0.3 }}
                   className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden z-50"
                 >
-                  {/* Plan badge */}
                   {plan && (
                     <div className="px-4 py-3 text-sm font-semibold text-center bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-500/20 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
-                      <span className="px-2 py-1 rounded-md bg-gray-900/80 text-white text-xs tracking-wide shadow-sm">
+                      <span className="px-2 py-1 rounded-md bg-gray-900/80 text-white text-xs">
                         {titleFromKey(plan)} Plan
                       </span>
                     </div>
@@ -177,17 +181,21 @@ function Navbar() {
         )}
       </div>
 
-      {/* Modals (local control) */}
+      {/* Modals */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       <SubscriptionPopup
         isOpen={isSubscriptionOpen}
         onClose={() => setIsSubscriptionOpen(false)}
       />
+      <ContactUsModal
+        open={isContactOpen}
+        onClose={() => setIsContactOpen(false)}
+      />
     </nav>
   );
 }
 
-/* Helper: Convert key → display name */
+/* Helper */
 function titleFromKey(key) {
   switch (key) {
     case "lakshya":
