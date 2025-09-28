@@ -46,14 +46,14 @@ const subjects = {
   // ✅ Prelims Tests is last now
   "Prelims Tests": {
     tabs: Array.from({ length: 15 }, (_, i) => `Test ${i + 1}`),
-    total: Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`Test ${i + 1}`, 1])), // each test = 1
+    total: Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`Test ${i + 1}`, 1])),
     bg: "/images/prelims.jpg",
     icon: "/images/icons/prelims.png",
   },
 };
 
 export default function PrelimsTests() {
-  const [activeSubject, setActiveSubject] = useState("History"); // ✅ back to History as default
+  const [activeSubject, setActiveSubject] = useState("History");
   const [activeTab, setActiveTab] = useState("Ancient");
   const [attempted, setAttempted] = useState({});
   const [confirmTest, setConfirmTest] = useState(null);
@@ -96,12 +96,22 @@ export default function PrelimsTests() {
   const confirmProceed = async () => {
     if (!user || !confirmTest) return;
     const key = `${confirmTest.subject}-${confirmTest.tab}`;
-    const ref = doc(db, "prelimsProgress", user.uid);
 
-    await setDoc(ref, { [key]: increment(1) }, { merge: true });
+    try {
+      // update per-test counters
+      const ref = doc(db, "prelimsProgress", user.uid);
+      await setDoc(ref, { [key]: increment(1) }, { merge: true });
 
-    setConfirmTest(null);
-    navigate(`/tests/${confirmTest.subject.toLowerCase()}/${confirmTest.tab.toLowerCase()}`);
+      // ALSO increment overall Prelims counter so TopicTests reflects it
+      const overallRef = doc(db, "testsProgress", user.uid);
+      await setDoc(overallRef, { prelims: increment(1) }, { merge: true });
+
+      setConfirmTest(null);
+      navigate(`/tests/${confirmTest.subject.toLowerCase()}/${confirmTest.tab.toLowerCase()}`);
+    } catch (err) {
+      console.error("Error starting prelims test:", err);
+      alert("Something went wrong, please try again.");
+    }
   };
 
   return (
