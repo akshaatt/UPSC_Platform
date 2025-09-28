@@ -1,26 +1,52 @@
+// src/components/TestPreview.js
 import React, { useEffect, useState } from "react";
 import { questions } from "../data/questions";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
+import { doc, onSnapshot } from "firebase/firestore";
 
 function TestPreview() {
   const [user] = useAuthState(auth);
   const [randomQs, setRandomQs] = useState([]);
   const [selected, setSelected] = useState({});
   const [popup, setPopup] = useState({ show: false, message: "" });
+  const [plan, setPlan] = useState(null);
+  const [loadingPlan, setLoadingPlan] = useState(true);
+
   const navigate = useNavigate();
 
-  // TEMP plan source (until Firestore is wired)
-  // set this in your browser console to simulate:
-  // localStorage.setItem('plan','safalta') / 'shikhar' / 'samarpan'
-  const userPlan = user ? (localStorage.getItem("plan") || "lakshya") : null;
-  const hasTestsAccess = !!user && ["safalta", "shikhar", "samarpan"].includes(userPlan);
+  // 🔹 Get user plan from Firestore
+  useEffect(() => {
+    if (!user) {
+      setPlan(null);
+      setLoadingPlan(false);
+      return;
+    }
+
+    const ref = doc(db, "users", user.uid);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setPlan(snap.data().plan || "lakshya");
+      } else {
+        setPlan("lakshya");
+      }
+      setLoadingPlan(false);
+    });
+
+    return () => unsub();
+  }, [user]);
+
+  // 🔹 Pick 3 random questions (re-runs each mount + on button refresh)
+  const generateRandomQuestions = () => {
+    const shuffled = [...questions].sort(() => Math.random() - 0.5);
+    setRandomQs(shuffled.slice(0, 3));
+    setSelected({});
+  };
 
   useEffect(() => {
-    const shuffled = [...questions].sort(() => 0.5 - Math.random());
-    setRandomQs(shuffled.slice(0, 3));
+    generateRandomQuestions();
   }, []);
 
   const handleSelect = (qid, optionIndex) => {
@@ -29,14 +55,26 @@ function TestPreview() {
 
   const handleContinue = () => {
     if (!user) {
-      setPopup({ show: true, message: "Please log in to access chapter-wise / subject-wise tests." });
+      setPopup({
+        show: true,
+        message: "Please log in to access chapter-wise / subject-wise tests.",
+      });
       return;
     }
-    if (!hasTestsAccess) {
-      setPopup({ show: true, message: "Upgrade to Safalta or higher to access all tests." });
+
+    if (loadingPlan) {
+      setPopup({ show: true, message: "Checking your plan, please wait…" });
       return;
     }
-    navigate("/tests");
+
+    if (["safalta", "shikhar", "samarpan"].includes(plan)) {
+      navigate("/topic-tests");
+    } else {
+      setPopup({
+        show: true,
+        message: "Upgrade to Safalta or higher to access all tests.",
+      });
+    }
   };
 
   return (
@@ -69,7 +107,8 @@ function TestPreview() {
                     const isCorrect = q.answer === idx;
                     const showFeedback = selected[q.id] !== undefined;
 
-                    let cls = "w-full text-left px-4 py-2 rounded-lg border transition-all duration-300 ";
+                    let cls =
+                      "w-full text-left px-4 py-2 rounded-lg border transition-all duration-300 ";
                     if (showFeedback) {
                       if (isSelected && isCorrect) {
                         cls += "bg-green-500 text-white border-green-600";
@@ -81,7 +120,8 @@ function TestPreview() {
                         cls += "bg-gray-100 dark:bg-gray-700";
                       }
                     } else {
-                      cls += "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600";
+                      cls +=
+                        "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600";
                     }
 
                     return (
@@ -113,8 +153,14 @@ function TestPreview() {
         </AnimatePresence>
       </div>
 
-      {/* Continue button */}
-      <div className="mt-10 text-center">
+      {/* Buttons */}
+      <div className="mt-10 flex justify-center gap-4">
+        <button
+          onClick={generateRandomQuestions}
+          className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition"
+        >
+          Refresh Questions
+        </button>
         <button
           onClick={handleContinue}
           className="px-6 py-3 bg-[#0090DE] text-white rounded-lg font-semibold hover:bg-[#007bbd] transition"
@@ -142,7 +188,9 @@ function TestPreview() {
               <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
                 Access Restricted
               </h3>
-              <p className="text-gray-600 dark:text-gray-300 mb-4">{popup.message}</p>
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                {popup.message}
+              </p>
               <button
                 onClick={() => setPopup({ show: false, message: "" })}
                 className="mt-2 px-5 py-2 bg-[#0090DE] text-white rounded-lg hover:bg-[#007bbd] transition"

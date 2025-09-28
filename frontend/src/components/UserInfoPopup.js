@@ -1,0 +1,168 @@
+// src/components/UserInfoPopup.js
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { FaCheckCircle } from "react-icons/fa";
+
+export default function UserInfoPopup({ user, isOpen, onClose }) {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [gender, setGender] = useState("Male");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [agree, setAgree] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showSavedPopup, setShowSavedPopup] = useState(false);
+
+  if (!isOpen || !user) return null;
+
+  const handleSubmit = async () => {
+    if (!firstName || !lastName || !gender || !phone || !address || !agree) {
+      alert("Please fill all fields and agree to Terms & Conditions.");
+      return;
+    }
+    try {
+      setSaving(true);
+      await setDoc(
+        doc(db, "users", user.uid),
+        { firstName, lastName, gender, phone, address },
+        { merge: true }
+      );
+      setShowSavedPopup(true);
+      setTimeout(() => {
+        setShowSavedPopup(false);
+        onClose();
+      }, 2000); // auto close after 2s
+    } catch (err) {
+      console.error("Error saving user info:", err);
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="userinfo-overlay"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div
+            key="userinfo-modal"
+            initial={{ scale: 0.9, opacity: 0, y: 30 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 30 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            className="relative w-[90%] max-w-md rounded-2xl bg-white dark:bg-gray-800 shadow-2xl p-8 text-center"
+          >
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Welcome to <span className="text-[#0090DE]">Satyapath</span> 🚀
+            </h2>
+            <p className="mt-2 text-gray-600 dark:text-gray-300">
+              Complete your profile to unlock personalized features!
+            </p>
+
+            <div className="mt-6 space-y-4 text-left">
+              <input
+                type="text"
+                placeholder="First Name"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Last Name"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+              />
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+              >
+                <option>Male</option>
+                <option>Female</option>
+              </select>
+              <input
+                type="tel"
+                placeholder="Enter your phone number"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <textarea
+                placeholder="Enter your address"
+                rows="3"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={agree}
+                  onChange={() => setAgree(!agree)}
+                />
+                I agree to the{" "}
+                <span className="text-[#0090DE] cursor-pointer">
+                  Terms & Conditions
+                </span>
+              </label>
+            </div>
+
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className={`mt-6 w-full py-2 rounded-lg font-semibold transition ${
+                saving
+                  ? "bg-[#0090DE]/70 text-white cursor-wait"
+                  : "bg-[#0090DE] text-white hover:bg-[#007bbd]"
+              }`}
+            >
+              {saving ? "Saving..." : "Submit"}
+            </button>
+          </motion.div>
+
+          {/* ✅ Saved Popup */}
+          <AnimatePresence>
+            {showSavedPopup && (
+              <motion.div
+                key="saved-popup"
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl text-center"
+                >
+                  <FaCheckCircle
+                    className="mx-auto text-green-500 mb-2"
+                    size={48}
+                  />
+                  <h3 className="text-xl font-bold text-gray-800 dark:text-white">
+                    Saved Successfully 🎉
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-300 mt-1">
+                    Your details have been updated.
+                  </p>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

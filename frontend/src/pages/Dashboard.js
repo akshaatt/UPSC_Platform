@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { auth, db, DEFAULT_AVATAR } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, onSnapshot } from "firebase/firestore";
 import { motion } from "framer-motion";
 import {
   LineChart,
@@ -16,14 +16,12 @@ import { FaStar } from "react-icons/fa";
 
 /** helpers */
 function toKey(d) {
-  // YYYY-MM-DD
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 function toLabel(d) {
-  // dd/mm
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${day}/${m}`;
@@ -39,22 +37,53 @@ function lastNDays(n) {
   return out;
 }
 
+// helper for colors
+function planStyle(plan) {
+  switch (plan) {
+    case "lakshya":
+      return { text: "Lakshya", bg: "bg-gray-200 text-gray-700" };
+    case "safalta":
+      return { text: "Safalta", bg: "bg-blue-100 text-blue-700" };
+    case "shikhar":
+      return { text: "Shikhar", bg: "bg-green-100 text-green-700" };
+    case "samarpan":
+      return { text: "Samarpan", bg: "bg-yellow-100 text-yellow-700" };
+    default:
+      return { text: "No Plan", bg: "bg-gray-100 text-gray-500" };
+  }
+}
+
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [userDoc, setUserDoc] = useState(null);
+  const [plan, setPlan] = useState(null);
   const [loginData, setLoginData] = useState([]);
   const [loadingChart, setLoadingChart] = useState(true);
 
-  // demo counters (wire these later to Firestore like loginStats)
   const stats = {
     quizzes: 12,
     questions: 45,
     downloads: 8,
     profileVisits: 5,
   };
-  const stars = 3; // UI only for now
+  const stars = 3;
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        const ref = doc(db, "users", u.uid);
+        const unsubDoc = onSnapshot(ref, (snap) => {
+          const data = snap.exists() ? snap.data() : null;
+          setUserDoc(data);
+          setPlan(data?.plan || null);
+        });
+        return () => unsubDoc();
+      } else {
+        setUserDoc(null);
+        setPlan(null);
+      }
+    });
     return () => unsub();
   }, []);
 
@@ -62,7 +91,7 @@ export default function Dashboard() {
     async function fetchLoginStats() {
       setLoadingChart(true);
       try {
-        const snap = await getDocs(collection(db, "loginStats")); // docs with id = YYYY-MM-DD, {count: number}
+        const snap = await getDocs(collection(db, "loginStats"));
         const map = new Map();
         snap.forEach((doc) => {
           const { count = 0 } = doc.data() || {};
@@ -71,7 +100,7 @@ export default function Dashboard() {
 
         const days = lastNDays(30);
         const series = days.map(({ key, label }) => ({
-          date: label,          // dd/mm for X axis
+          date: label,
           logins: map.get(key) || 0,
         }));
         setLoginData(series);
@@ -93,6 +122,9 @@ export default function Dashboard() {
     );
   }
 
+  const avatarSrc = (user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR);
+  const planObj = planStyle(plan);
+
   return (
     <motion.div
       className="pt-24 max-w-6xl mx-auto px-6"
@@ -108,7 +140,7 @@ export default function Dashboard() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8 }}
       >
-        {/* soft dust aura */}
+        {/* aura */}
         <motion.div
           className="absolute -top-16 -left-16 w-48 h-48 bg-[#0090DE]/25 rounded-full blur-3xl"
           animate={{ x: [0, 12, 0], y: [0, -10, 0] }}
@@ -121,16 +153,22 @@ export default function Dashboard() {
         />
 
         <motion.img
-          src={user.photoURL || DEFAULT_AVATAR}
+          src={avatarSrc}
           alt="Profile"
           className="w-28 h-28 rounded-full border-4 border-white dark:border-gray-800 object-cover shadow-lg mb-4"
+          onError={(e) => { e.currentTarget.src = DEFAULT_AVATAR; }}
           whileHover={{ scale: 1.05, rotate: 1.5 }}
           transition={{ type: "spring", stiffness: 220 }}
         />
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-          {user.displayName || "Aspirant"}
+          {user.displayName || userDoc?.firstName || "Aspirant"}
         </h1>
         <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+
+        {/* Plan Badge */}
+        <div className={`mt-3 px-4 py-1 rounded-full text-sm font-semibold shadow-sm ${planObj.bg}`}>
+          {planObj.text} Plan
+        </div>
       </motion.div>
 
       {/* Stats */}
@@ -159,7 +197,7 @@ export default function Dashboard() {
         ))}
       </motion.div>
 
-      {/* Login Graph (last 30 days, dd/mm) */}
+      {/* Login Graph */}
       <motion.div
         className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-xl shadow-lg p-6 mb-10"
         initial={{ x: -30, opacity: 0 }}
@@ -199,7 +237,6 @@ export default function Dashboard() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
       >
-        {/* subtle dust */}
         <motion.div
           className="absolute -top-10 left-1/3 w-40 h-40 bg-[#0090DE]/15 rounded-full blur-2xl"
           animate={{ opacity: [0.5, 0.2, 0.5] }}
@@ -212,7 +249,7 @@ export default function Dashboard() {
           {[...Array(5)].map((_, i) => (
             <FaStar
               key={i}
-              className={i < stars ? "text-yellow-400" : "text-gray-300"}
+              className={i < 3 ? "text-yellow-400" : "text-gray-300"}
             />
           ))}
         </div>

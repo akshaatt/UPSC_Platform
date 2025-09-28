@@ -1,21 +1,39 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth, DEFAULT_AVATAR } from "../firebase";
+import { auth, DEFAULT_AVATAR, db } from "../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import AuthModal from "./AuthModal";
 import SubscriptionPopup from "./SubscriptionPopup";
 import { motion, AnimatePresence } from "framer-motion";
 
 function Navbar() {
   const [user, setUser] = useState(null);
+  const [userDoc, setUserDoc] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
+  const [plan, setPlan] = useState(null);
   const navigate = useNavigate();
 
+  // Listen to auth + user doc (plan, photoURL, etc.)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsub();
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        const ref = doc(db, "users", u.uid);
+        const unsubDoc = onSnapshot(ref, (snap) => {
+          const data = snap.exists() ? snap.data() : null;
+          setUserDoc(data);
+          setPlan(data?.plan || null);
+        });
+        return () => unsubDoc();
+      } else {
+        setUserDoc(null);
+        setPlan(null);
+      }
+    });
+    return () => unsubAuth();
   }, []);
 
   // close dropdown if clicked outside
@@ -26,6 +44,8 @@ function Navbar() {
     document.addEventListener("click", closeDropdown);
     return () => document.removeEventListener("click", closeDropdown);
   }, []);
+
+  const avatarSrc = (user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR);
 
   return (
     <nav className="bg-black shadow-md shadow-gray-800/40 fixed w-full top-0 z-50">
@@ -40,7 +60,7 @@ function Navbar() {
         </h1>
 
         {/* Links */}
-        <div className="hidden md:flex space-x-8 text-white font-medium">
+        <div className="hidden md:flex space-x-8 text-white font-medium items-center">
           <button
             onClick={() => navigate("/services")}
             className="hover:text-[#0090DE] transition"
@@ -61,9 +81,14 @@ function Navbar() {
           </button>
           <button
             onClick={() => setIsSubscriptionOpen(true)}
-            className="hover:text-[#0090DE] transition"
+            className="hover:text-[#0090DE] transition flex items-center gap-1"
           >
-            Subscription
+            Subscription{" "}
+            {plan && (
+              <span className="text-gray-400 text-xs font-normal">
+                ({titleFromKey(plan)})
+              </span>
+            )}
           </button>
         </div>
 
@@ -75,11 +100,12 @@ function Navbar() {
               className="flex items-center gap-2 text-white"
             >
               <img
-                src={user.photoURL || DEFAULT_AVATAR}
+                src={avatarSrc}
                 alt="avatar"
                 className="w-8 h-8 rounded-full object-cover border-2 border-white"
+                onError={(e) => { e.currentTarget.src = DEFAULT_AVATAR; }}
               />
-              {user.displayName || "User"}
+              {user.displayName || userDoc?.firstName || "User"}
               <span>▼</span>
             </button>
 
@@ -91,9 +117,18 @@ function Navbar() {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden z-50"
+                  transition={{ duration: 0.3, ease: [0.42, 0, 0.58, 1] }}
+                  className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden z-50"
                 >
+                  {/* Plan badge */}
+                  {plan && (
+                    <div className="px-4 py-3 text-sm font-semibold text-center bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-500/20 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
+                      <span className="px-2 py-1 rounded-md bg-gray-900/80 text-white text-xs tracking-wide shadow-sm">
+                        {titleFromKey(plan)} Plan
+                      </span>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => {
                       navigate("/dashboard");
@@ -142,7 +177,7 @@ function Navbar() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals (local control) */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       <SubscriptionPopup
         isOpen={isSubscriptionOpen}
@@ -150,6 +185,22 @@ function Navbar() {
       />
     </nav>
   );
+}
+
+/* Helper: Convert key → display name */
+function titleFromKey(key) {
+  switch (key) {
+    case "lakshya":
+      return "Lakshya";
+    case "safalta":
+      return "Safalta";
+    case "shikhar":
+      return "Shikhar";
+    case "samarpan":
+      return "Samarpan";
+    default:
+      return "Unknown";
+  }
 }
 
 export default Navbar;

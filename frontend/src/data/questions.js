@@ -1,3 +1,4 @@
+// src/data/questions.js
 // Add your 150 here in the same shape.
 // answer is the INDEX of the correct option (0,1,2,3)
 
@@ -34,6 +35,12 @@ export const questions = [
 3. Sambar Deer
 How many of the above are generally nocturnal or most active after sunset?`,
     options: ["Only one", "Only two", "All three", "None"],
+    answer: 0, // (a)
+  },
+  {
+    id: 4,
+    question: `Who is kittu's lover`,
+    options: ["Akshat", "Mumma", "Jaanu", "Motu"],
     answer: 0, // (a)
   },
 ];
