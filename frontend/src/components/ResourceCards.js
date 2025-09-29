@@ -1,23 +1,39 @@
-import React, { useState } from "react";
-import { auth } from "../firebase";
+import React, { useState, useEffect } from "react";
+import { auth, db } from "../firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 
 function ResourceCards() {
   const [user] = useAuthState(auth);
+  const [userDoc, setUserDoc] = useState(null);
   const [popup, setPopup] = useState({ show: false, message: "" });
 
-  // ⚠️ Replace this with Firestore later
-  const userPlan = user ? "lakshya" : null;
+  // ✅ fetch user plan from Firestore
+  useEffect(() => {
+    if (!user) {
+      setUserDoc(null);
+      return;
+    }
+    const unsub = onSnapshot(doc(db, "users", user.uid), (snap) => {
+      if (snap.exists()) setUserDoc(snap.data());
+    });
+    return () => unsub();
+  }, [user]);
+
+  const plan = userDoc?.plan || "lakshya"; // default lakshya
 
   // ✅ access rules
   const canAccessMaps =
-    userPlan && ["lakshya", "safalta", "shikhar", "samarpan"].includes(userPlan);
+    !user || ["lakshya", "safalta", "shikhar", "samarpan"].includes(plan);
+
   const canAccessDynasty =
-    userPlan && ["safalta", "shikhar", "samarpan"].includes(userPlan);
-  const canAccessPapers = !!userPlan;
+    !user || ["safalta", "shikhar", "samarpan"].includes(plan);
+
+  const canAccessPapers = !user || !!plan;
+
   const canAccessNewspapers =
-    userPlan && ["lakshya", "safalta", "shikhar", "samarpan"].includes(userPlan);
+    !user || ["lakshya", "safalta", "shikhar", "samarpan"].includes(plan);
 
   const cards = [
     {
@@ -51,9 +67,7 @@ function ResourceCards() {
   ];
 
   const handleClick = (card) => {
-    if (!user) {
-      setPopup({ show: true, message: "Please log in to access this resource." });
-    } else if (!card.allowed) {
+    if (!card.allowed) {
       setPopup({
         show: true,
         message: `This resource is locked. Please upgrade to ${card.needPlan}.`,
@@ -112,7 +126,9 @@ function ResourceCards() {
               <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
                 Access Restricted
               </h2>
-              <p className="text-gray-600 dark:text-gray-300 mb-4">{popup.message}</p>
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                {popup.message}
+              </p>
               <button
                 onClick={() => setPopup({ show: false, message: "" })}
                 className="mt-2 px-5 py-2 bg-[#0090DE] text-white rounded-lg hover:bg-[#007bbd] transition"

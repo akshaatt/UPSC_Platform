@@ -14,6 +14,18 @@ export default function ToppersTalk({ videos = [] }) {
     if (index > 0) setIndex(index - 1);
   };
 
+  // Helper to get videoId
+  const getVideoId = (url) => {
+    try {
+      const urlObj = new URL(url);
+      return (
+        urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop()
+      );
+    } catch {
+      return "";
+    }
+  };
+
   return (
     <section className="relative py-20 mt-16 overflow-hidden text-white">
       {/* 🌌 Stars + Gradient Background */}
@@ -46,15 +58,7 @@ export default function ToppersTalk({ videos = [] }) {
             className="flex gap-6"
           >
             {videos.map((video, i) => {
-              let videoId = "";
-              try {
-                const urlObj = new URL(video.url);
-                videoId =
-                  urlObj.searchParams.get("v") ||
-                  urlObj.pathname.split("/").pop();
-              } catch (err) {
-                console.error("Invalid video URL:", video.url);
-              }
+              const videoId = getVideoId(video.url);
 
               // Try maxresdefault first, then fallback to hqdefault
               const thumbnail = videoId
@@ -118,7 +122,7 @@ export default function ToppersTalk({ videos = [] }) {
           <div className="relative w-full max-w-4xl aspect-video rounded-2xl overflow-hidden shadow-2xl">
             <iframe
               className="w-full h-full"
-              src={activeVideo.replace("watch?v=", "embed/")}
+              src={`https://www.youtube.com/embed/${getVideoId(activeVideo)}`}
               title="YouTube video player"
               frameBorder="0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

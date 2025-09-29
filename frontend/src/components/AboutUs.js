@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import SubscriptionPopup from "./SubscriptionPopup";
 
 function AboutUs() {
+  const sectionRef = useRef(null);
   const canvasRef = useRef(null);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
 
-  // Responsive helper
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -15,70 +15,75 @@ function AboutUs() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Rotating images
   const [activeIndex, setActiveIndex] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => {
-      setActiveIndex((p) => (p + 1) % 3);
-    }, 1500);
+    const id = setInterval(() => setActiveIndex((p) => (p + 1) % 3), 4000);
     return () => clearInterval(id);
   }, []);
 
-  // Starry background
+  // starry background
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    if (!canvas || !sectionRef.current) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
 
+    let rafId = null;
     let stars = [];
-    let w = (canvas.width = window.innerWidth);
-    let h = (canvas.height = 450);
-    let rafId;
+
+    const setupSize = () => {
+      const ratio = window.devicePixelRatio || 1;
+      const targetH = 500; // reduce height to center
+      canvas.style.width = "100%";
+      canvas.style.height = `${targetH}px`;
+      canvas.width = Math.floor(window.innerWidth * ratio);
+      canvas.height = Math.floor(targetH * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
 
     const initStars = () => {
-      stars = Array.from({ length: 150 }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        size: Math.random() * 2,
-        twinkle: Math.random() * 100,
+      const wCss = canvas.width / (window.devicePixelRatio || 1);
+      const hCss = canvas.height / (window.devicePixelRatio || 1);
+      stars = Array.from({ length: 160 }, () => ({
+        x: Math.random() * wCss,
+        y: Math.random() * hCss,
+        r: Math.random() * 1.8 + 0.2,
+        t: Math.random() * Math.PI * 2,
+        s: 0.02 + Math.random() * 0.03,
       }));
     };
 
-    const animate = () => {
-      const gradient = ctx.createLinearGradient(0, 0, w, h);
-      gradient.addColorStop(0, "#001726");
-      gradient.addColorStop(1, "#0090DE");
-      ctx.fillStyle = gradient;
+    const draw = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#001726");
+      grad.addColorStop(1, "#0090DE");
+      ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
-      stars.forEach((s) => {
-        s.twinkle += 0.05;
-        const alpha = 0.5 + 0.5 * Math.sin(s.twinkle);
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      stars.forEach((st) => {
+        st.t += st.s;
+        const a = 0.5 + 0.5 * Math.sin(st.t);
         ctx.beginPath();
-        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`;
+        ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
         ctx.fill();
       });
 
-      rafId = requestAnimationFrame(animate);
+      rafId = requestAnimationFrame(draw);
     };
 
+    setupSize();
     initStars();
-    animate();
+    draw();
 
-    const onResize = () => {
-      w = canvas.width = window.innerWidth;
-      h = canvas.height = 450;
-      initStars();
-    };
-    window.addEventListener("resize", onResize);
-
+    window.addEventListener("resize", setupSize);
     return () => {
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", setupSize);
       if (rafId) cancelAnimationFrame(rafId);
     };
   }, []);
 
-  // Animation variants for text
   const textParent = {
     hidden: { opacity: 0, y: 40 },
     show: {
@@ -86,69 +91,64 @@ function AboutUs() {
       y: 0,
       transition: { duration: 0.7, ease: "easeOut", staggerChildren: 0.15 },
     },
-    exit: { opacity: 0, y: -40, transition: { duration: 0.5 } },
   };
   const textChild = {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
-    exit: { opacity: 0, y: -20, transition: { duration: 0.4 } },
   };
 
-  // Images
   const images = [
-    { src: "/assets/about-1.png", alt: "UPSC Preparation" },
-    { src: "/assets/about-2.png", alt: "Library" },
-    { src: "/assets/about-3.png", alt: "Mentorship" },
+    { src: "/assets/about-1.png", alt: "UPSC Mentorship" },
+    { src: "/assets/about-2.png", alt: "UPSC Library" },
+    { src: "/assets/about-3.png", alt: "UPSC Notes & Maps" },
   ];
 
-  // Positions
-  const POS_CENTER = { x: -10, y: -10 };
-  const POS_TL = isMobile ? { x: -50, y: -50 } : { x: -70, y: -70 };
-  const POS_BR = isMobile ? { x: 50, y: 50 } : { x: 70, y: 70 };
+  const SLOT_CENTER = { x: 0, y: 0, scale: 1.2, op: 1, z: 30 };
+  const SLOT_LEFT = isMobile
+    ? { x: -70, y: -50, scale: 0.9, op: 0.6, z: 20 }
+    : { x: -120, y: -50, scale: 0.9, op: 0.6, z: 20 };
+  const SLOT_RIGHT = isMobile
+    ? { x: 70, y: 50, scale: 0.9, op: 0.6, z: 10 }
+    : { x: 120, y: 50, scale: 0.9, op: 0.6, z: 10 };
 
-  const getPose = (idx) => {
-    if (idx === activeIndex) return { ...POS_CENTER, scale: 1.2, z: 20, op: 1 };
-    if (idx === (activeIndex + 1) % 3) return { ...POS_TL, scale: 0.85, z: 10, op: 0.9 };
-    return { ...POS_BR, scale: 0.85, z: 10, op: 0.9 };
-  };
+  const slots = [SLOT_CENTER, SLOT_LEFT, SLOT_RIGHT];
 
   return (
-    <section className="relative mt-20 w-full overflow-hidden">
-      {/* Starry background */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+    <section ref={sectionRef} className="relative mt-20 w-full overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full pointer-events-none"
+        aria-hidden="true"
+      />
 
-      <div className="relative z-10 max-w-6xl mx-auto px-6 py-16 grid md:grid-cols-2 gap-12 items-center">
-        {/* Left: text with animations */}
+      {/* remove big padding → let items truly center */}
+      <div className="relative z-10 max-w-6xl mx-auto px-6 py-12 grid md:grid-cols-2 gap-12 items-center">
+        {/* left text */}
         <motion.div
           variants={textParent}
           initial="hidden"
           whileInView="show"
-          exit="exit"
           viewport={{ once: false, amount: 0.3 }}
           className="text-gray-200 leading-relaxed"
         >
-          <motion.h2
-            variants={textChild}
-            className="text-3xl md:text-4xl font-bold mb-6 text-white"
-          >
+          <motion.h2 variants={textChild} className="text-3xl md:text-4xl font-bold mb-6 text-white">
             About <span className="text-[#00b4ff]">Satyapath</span>
           </motion.h2>
 
           <motion.p variants={textChild} className="mb-4">
-            Satyapath means <strong>“Path of Truth”</strong>. We simplify the UPSC
-            journey with the right resources, smart test series, and AI-powered
-            guidance—so you focus on learning, not searching.
+            Satyapath means <strong>“Path of Truth”</strong>. We simplify the UPSC journey with the
+            right resources, smart test series, and AI-powered guidance—so you focus on learning, not
+            searching.
           </motion.p>
 
           <motion.p variants={textChild} className="mb-4">
             From <strong>notes, maps, and current affairs</strong> to{" "}
-            <strong>mock tests and mentor guidance</strong>, everything lives in one
-            place. Start with Lakshya (free) or go premium—Satyapath grows with you.
+            <strong>mock tests and mentor guidance</strong>, everything lives in one place. Start with
+            Lakshya (free) or go premium—Satyapath grows with you.
           </motion.p>
 
           <motion.p variants={textChild} className="mb-6">
-            Our goal: save time, sharpen strategy, and help you walk confidently
-            toward your IAS dream 🚀.
+            Our goal: save time, sharpen strategy, and help you walk confidently toward your IAS dream 🚀.
           </motion.p>
 
           <motion.div variants={textChild} className="mt-4 flex gap-4">
@@ -167,30 +167,35 @@ function AboutUs() {
           </motion.div>
         </motion.div>
 
-        {/* Right: rotating images, vertically centered */}
-        <div className="relative flex justify-center items-center">
-          <div className="relative w-[300px] md:w-[360px] h-[300px] md:h-[360px] flex items-center justify-center">
-            {images.map((img, idx) => {
-              const pose = getPose(idx);
-              return (
-                <motion.img
-                  key={idx}
-                  src={img.src}
-                  alt={img.alt}
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-xl"
-                  style={{ width: isMobile ? 130 : 170, height: "auto" }}
-                  initial={false}
-                  animate={{
-                    x: pose.x,
-                    y: pose.y,
-                    scale: pose.scale,
-                    opacity: pose.op,
-                    zIndex: pose.z,
-                  }}
-                  transition={{ duration: 0.8, ease: "easeInOut" }}
-                />
-              );
-            })}
+        {/* right images */}
+        <div className="relative flex items-center justify-center">
+          <div className="relative w-[420px] h-[420px] flex items-center justify-center">
+            <AnimatePresence>
+              {images.map((img, idx) => {
+                const slotIdx = (idx - activeIndex + images.length) % images.length;
+                const slot = slots[slotIdx] || SLOT_RIGHT;
+
+                return (
+                  <motion.img
+                    key={img.src + activeIndex}
+                    src={img.src}
+                    alt={img.alt}
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-xl"
+                    style={{ width: isMobile ? 180 : 240, height: "auto" }}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{
+                      x: slot.x,
+                      y: slot.y,
+                      scale: slot.scale,
+                      opacity: slot.op,
+                      zIndex: slot.z,
+                    }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.9, ease: "easeInOut" }}
+                  />
+                );
+              })}
+            </AnimatePresence>
           </div>
         </div>
       </div>

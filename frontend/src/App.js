@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, orderBy } from "firebase/firestore";
 
 import Navbar from "./components/Navbar";
 import AnimatedBanner from "./components/AnimatedBanner";
@@ -11,31 +11,36 @@ import AiSearch from "./components/AiSearch";
 import ResourceCards from "./components/ResourceCards";
 import AboutUs from "./components/AboutUs";
 import TestPreview from "./components/TestPreview";
-import ToppersTalk from "./components/ToppersTalk"; // ✅ New component
+import ToppersTalk from "./components/ToppersTalk"; 
+import StudyRoomsPreview from "./components/StudyRoomsPreview";
 
 import Library from "./pages/Library";
 import Maps from "./pages/Maps";
 import Dynasty from "./pages/Dynasty";
-import Papers from "./pages/Papers";
+import PreviousPapers from "./pages/PreviousPapers";   // ✅ renamed for clarity
+import Newspapers from "./pages/Newspapers";          // ✅ added route
 import Tests from "./pages/Tests";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/Dashboard";
 import TopicTests from "./pages/TopicTests";
 import PrelimsTests from "./pages/PrelimsTests";
+import StudyRoom from "./pages/StudyRoom";
 
 import AuthModal from "./components/AuthModal";
 import SubscriptionPopup from "./components/SubscriptionPopup";
 import UserInfoPopup from "./components/UserInfoPopup";
 
 function HomePage() {
-  // ✅ Dynamic toppers videos list (up to 20)
-  const toppersVideos = [
-    { title: "UPSC Topper’s Strategy 2024", url: "https://www.youtube.com/watch?v=abcd1234xyz" },
-    { title: "How I Cracked UPSC in First Attempt", url: "https://www.youtube.com/watch?v=efgh5678uvw" },
-    { title: "Time Management Tips for Prelims", url: "https://www.youtube.com/watch?v=ijkl9012rst" },
-    { title: "UPSC Interview Guidance", url: "https://www.youtube.com/watch?v=mnop3456qrs" },
-    // 👉 Add more YouTube links (max 20)
-  ];
+  const [videos, setVideos] = useState([]);
+
+  useEffect(() => {
+    // Fetch videos from Firestore (collection: "videos")
+    const q = query(collection(db, "videos"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setVideos(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
 
   return (
     <>
@@ -56,8 +61,11 @@ function HomePage() {
       <AboutUs />
       <TestPreview />
 
-      {/* ✅ New Toppers Talk section with stars + gradient + carousel */}
-      <ToppersTalk videos={toppersVideos} />
+      {/* ✅ Dynamic Toppers Talk */}
+      <ToppersTalk videos={videos} />
+
+      {/* ✅ Preview section → redirects to StudyRoom.js */}
+      <StudyRoomsPreview /> 
     </>
   );
 }
@@ -148,8 +156,12 @@ function App() {
           <Route path="/library" element={<Library />} />
           <Route path="/resources/maps" element={<Maps />} />
           <Route path="/resources/dynasty" element={<Dynasty />} />
-          <Route path="/resources/papers" element={<Papers />} />
+          <Route path="/resources/papers" element={<PreviousPapers />} /> {/* ✅ renamed */}
+          <Route path="/resources/newspapers" element={<Newspapers />} />    {/* ✅ added */}
           <Route path="/tests" element={<Tests />} />
+
+          {/* ✅ Study Rooms Page */}
+          <Route path="/study-rooms" element={<StudyRoom />} />
 
           {/* ✅ TopicTests & PrelimsTests protected by subscription */}
           <Route
