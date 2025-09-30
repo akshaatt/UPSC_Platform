@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import Logo from "../components/Logo.jsx";
+import AddTests from "../components/AddTests"; // ✅ separate file
 
 import { auth, db } from "../firebase";
 import {
@@ -40,8 +41,9 @@ const tabs = [
   { key: "room", label: "Create Room", icon: BookPlus },
   { key: "yt", label: "Add YouTube Video", icon: Youtube },
   { key: "custom", label: "Add Custom Video", icon: Video },
-  { key: "resources", label: "Add Resource Cards", icon: BookPlus }, // ✅ NEW
+  { key: "resources", label: "Add Resource Cards", icon: BookPlus },
   { key: "students", label: "Students", icon: Users },
+  { key: "tests", label: "Add Tests", icon: BookPlus },
 ];
 
 export default function Dashboard() {
@@ -107,8 +109,9 @@ export default function Dashboard() {
             {active === "room" && <CreateRoom />}
             {active === "yt" && <AddYouTubeVideo />}
             {active === "custom" && <AddCustomVideo />}
-            {active === "resources" && <AddResourceCards />} {/* ✅ NEW */}
+            {active === "resources" && <AddResourceCards />}
             {active === "students" && <StudentsTable />}
+            {active === "tests" && <AddTests />} {/* ✅ imported component */}
           </motion.div>
         </main>
       </div>
@@ -156,7 +159,6 @@ function StatCard({ title, collectionName }) {
     </div>
   );
 }
-
 /* ---------------------------
    Components: Add Resource Cards
 ----------------------------*/
@@ -168,6 +170,7 @@ function AddResourceCards() {
   const [msg, setMsg] = useState("");
   const [resources, setResources] = useState([]);
 
+  // ✅ Fetch resources
   useEffect(() => {
     const q = query(
       collection(db, "resources"),
@@ -180,11 +183,12 @@ function AddResourceCards() {
     return () => unsub();
   }, [category]);
 
+  // ✅ Upload file
   const onSubmit = async (e) => {
     e.preventDefault();
     setMsg("");
     if (!title || !file) {
-      setMsg("Please provide a title and file.");
+      setMsg("⚠️ Please provide a title and file.");
       return;
     }
     setSaving(true);
@@ -192,6 +196,7 @@ function AddResourceCards() {
       const storage = getStorage();
       const storagePath = `resources/${Date.now()}-${file.name}`;
       const fileRef = ref(storage, storagePath);
+
       await uploadBytes(fileRef, file);
       const fileUrl = await getDownloadURL(fileRef);
 
@@ -214,13 +219,17 @@ function AddResourceCards() {
     }
   };
 
+  // ✅ Delete file
   const remove = async (res) => {
     if (!window.confirm("Delete this file?")) return;
     try {
       const storage = getStorage();
-      const fileRef = ref(storage, res.storagePath);
-      await deleteObject(fileRef).catch(() => {});
+      if (res.storagePath) {
+        const fileRef = ref(storage, res.storagePath);
+        await deleteObject(fileRef).catch(() => {});
+      }
       await deleteDoc(doc(db, "resources", res.id));
+      setMsg("🗑️ Deleted successfully!");
     } catch (err) {
       alert("Error deleting: " + err.message);
     }
@@ -228,17 +237,16 @@ function AddResourceCards() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-        Add Resource Cards
-      </h2>
+      <h2 className="text-2xl font-bold mb-4 text-gray-100">📂 Add Resource Cards</h2>
 
-      <form onSubmit={onSubmit} className="space-y-4 max-w-xl">
+      {/* Upload Form */}
+      <form onSubmit={onSubmit} className="space-y-4 max-w-xl bg-gray-900 p-6 rounded-2xl shadow-lg">
         {/* Category Select */}
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="w-full p-3 rounded-lg border border-white/30 dark:border-white/20 
-                     bg-gray-800 text-white placeholder-gray-400"
+          className="w-full p-3 rounded-lg border border-gray-600 
+                     bg-gray-800 text-white"
         >
           <option value="maps">Maps</option>
           <option value="dynasty">Dynasty Charts</option>
@@ -250,71 +258,71 @@ function AddResourceCards() {
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="File title"
-          className="w-full p-3 rounded-lg border border-white/30 dark:border-white/20 
-                     bg-gray-800 text-white placeholder-gray-400"
+          placeholder="Enter file title"
+          className="w-full p-3 rounded-lg border border-gray-600 bg-gray-800 text-white placeholder-gray-400"
         />
 
         {/* File Upload */}
         <input
           type="file"
           onChange={(e) => setFile(e.target.files[0])}
-          className="w-full p-3 rounded-lg border border-white/30 dark:border-white/20 
-                     bg-gray-800 text-white placeholder-gray-400 file:mr-4 file:rounded-md 
-                     file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+          className="w-full p-3 rounded-lg border border-gray-600 bg-gray-800 text-white file:mr-4 file:rounded-md file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
         />
 
         <button
           type="submit"
           disabled={saving}
-          className="px-5 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold"
+          className="w-full px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:opacity-90 text-white font-semibold shadow-lg"
         >
           {saving ? "Uploading..." : "Upload File"}
         </button>
 
-        {msg && <p className="text-sm mt-2 text-white">{msg}</p>}
+        {msg && <p className="text-sm mt-2 text-cyan-400">{msg}</p>}
       </form>
 
       {/* Recent Resources */}
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white">
-          Recent {category} files
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold mb-4 text-gray-100">
+          📑 Recent {category} files
         </h3>
+
         {resources.length === 0 ? (
           <p className="text-sm text-gray-400">No files yet.</p>
         ) : (
-          <div className="space-y-2">
-            {resources.map((res) => (
-              <div
-                key={res.id}
-                className="flex items-center justify-between p-3 rounded-lg 
-                           bg-white/70 dark:bg-gray-800 border border-white/10"
-              >
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {res.title}
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {res.fileName}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={res.fileUrl}
-                    download={`SATYAPATH - ${res.fileName}`}
-                    className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm"
-                  >
-                    Download
-                  </a>
-                  <button
-                    onClick={() => remove(res)}
-                    className="px-3 py-1 bg-red-500 text-white rounded-lg text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="space-y-3">
+            <AnimatePresence>
+              {resources.map((res) => (
+                <motion.div
+                  key={res.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex items-center justify-between p-4 rounded-lg 
+                             bg-gray-800 border border-gray-700 shadow-lg"
+                >
+                  <div>
+                    <p className="font-medium text-white">{res.title}</p>
+                    <p className="text-xs text-gray-400">{res.fileName}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={res.fileUrl}
+                      download={`SATYAPATH - ${res.title || res.fileName}`}
+                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm shadow"
+                    >
+                      Download
+                    </a>
+                    <button
+                      onClick={() => remove(res)}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm shadow"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </div>

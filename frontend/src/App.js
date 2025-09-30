@@ -1,9 +1,17 @@
+// src/App.js
 import React, { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot, collection, query, orderBy } from "firebase/firestore";
 
+// Components
 import Navbar from "./components/Navbar";
 import AnimatedBanner from "./components/AnimatedBanner";
 import WelcomeMessage from "./components/WelcomeMessage";
@@ -11,30 +19,34 @@ import AiSearch from "./components/AiSearch";
 import ResourceCards from "./components/ResourceCards";
 import AboutUs from "./components/AboutUs";
 import TestPreview from "./components/TestPreview";
-import ToppersTalk from "./components/ToppersTalk"; 
+import ToppersTalk from "./components/ToppersTalk";
 import StudyRoomsPreview from "./components/StudyRoomsPreview";
+import AuthModal from "./components/AuthModal";
+import SubscriptionPopup from "./components/SubscriptionPopup";
+import UserInfoPopup from "./components/UserInfoPopup";
+import Footer from "./components/Footer";
+import ContactUsModal from "./components/ContactUsModal"; // ✅ Contact modal
 
+// Pages
 import Library from "./pages/Library";
 import Maps from "./pages/Maps";
 import Dynasty from "./pages/Dynasty";
-import PreviousPapers from "./pages/PreviousPapers";   // ✅ renamed for clarity
-import Newspapers from "./pages/Newspapers";          // ✅ added route
+import PreviousPapers from "./pages/PreviousPapers";
+import Newspapers from "./pages/Newspapers";
 import Tests from "./pages/Tests";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/Dashboard";
 import TopicTests from "./pages/TopicTests";
 import PrelimsTests from "./pages/PrelimsTests";
 import StudyRoom from "./pages/StudyRoom";
+import TestListPage from "./pages/TestListPage";
+import TestRunner from "./pages/TestRunner";
 
-import AuthModal from "./components/AuthModal";
-import SubscriptionPopup from "./components/SubscriptionPopup";
-import UserInfoPopup from "./components/UserInfoPopup";
-
+// ✅ Homepage
 function HomePage() {
   const [videos, setVideos] = useState([]);
 
   useEffect(() => {
-    // Fetch videos from Firestore (collection: "videos")
     const q = query(collection(db, "videos"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setVideos(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
@@ -60,19 +72,18 @@ function HomePage() {
 
       <AboutUs />
       <TestPreview />
-
-      {/* ✅ Dynamic Toppers Talk */}
       <ToppersTalk videos={videos} />
-
-      {/* ✅ Preview section → redirects to StudyRoom.js */}
-      <StudyRoomsPreview /> 
+      <StudyRoomsPreview />
     </>
   );
 }
 
-function App() {
+// ✅ Wrapper for Router
+function AppWrapper() {
+  const location = useLocation();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false); // ✅ NEW
 
   const [user, setUser] = useState(null);
   const [userDoc, setUserDoc] = useState(null);
@@ -86,7 +97,6 @@ function App() {
       if (u) {
         setUser(u);
 
-        // ✅ Realtime updates so subscription/info changes reflect immediately
         unsubUserDoc = onSnapshot(doc(db, "users", u.uid), (snap) => {
           if (snap.exists()) {
             const data = snap.data();
@@ -115,87 +125,118 @@ function App() {
     };
   }, []);
 
-  // ✅ Protected routes wrapper
   const ProtectedTopicTests = ({ children }) => {
-    if (loading) return <div className="pt-24 text-center">Checking subscription…</div>;
+    if (loading)
+      return (
+        <div className="pt-24 text-center">Checking subscription…</div>
+      );
     if (!user) return <Navigate to="/" replace />;
 
-    if (!["safalta", "shikhar", "samarpan"].includes(userDoc?.plan || "lakshya")) {
+    if (
+      !["safalta", "shikhar", "samarpan"].includes(userDoc?.plan || "lakshya")
+    ) {
       return <Navigate to="/" replace />;
     }
     return children;
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center h-screen">Loading…</div>;
+    return (
+      <div className="flex justify-center items-center h-screen">Loading…</div>
+    );
   }
 
-  // ✅ Force OTP modal until verified
   if (user && userDoc && userDoc.isVerified === false) {
     return (
-      <Router>
-        <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-          <AuthModal isOpen={true} onClose={() => {}} />
-        </div>
-      </Router>
+      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+        <AuthModal isOpen={true} onClose={() => {}} />
+      </div>
     );
   }
 
   return (
-    <Router>
-      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-        <Navbar
-          onLoginClick={() => setIsAuthOpen(true)}
-          onSubscriptionClick={() => setIsSubscriptionOpen(true)}
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <Navbar
+        onLoginClick={() => setIsAuthOpen(true)}
+        onSubscriptionClick={() => setIsSubscriptionOpen(true)}
+      />
+
+      <Routes>
+        {/* Public */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/library" element={<Library />} />
+        <Route path="/resources/maps" element={<Maps />} />
+        <Route path="/resources/dynasty" element={<Dynasty />} />
+        <Route path="/resources/papers" element={<PreviousPapers />} />
+        <Route path="/resources/newspapers" element={<Newspapers />} />
+        <Route path="/tests" element={<Tests />} />
+        <Route path="/study-rooms" element={<StudyRoom />} />
+
+        {/* Protected */}
+        <Route
+          path="/topic-tests"
+          element={
+            <ProtectedTopicTests>
+              <TopicTests />
+            </ProtectedTopicTests>
+          }
         />
-
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/library" element={<Library />} />
-          <Route path="/resources/maps" element={<Maps />} />
-          <Route path="/resources/dynasty" element={<Dynasty />} />
-          <Route path="/resources/papers" element={<PreviousPapers />} /> {/* ✅ renamed */}
-          <Route path="/resources/newspapers" element={<Newspapers />} />    {/* ✅ added */}
-          <Route path="/tests" element={<Tests />} />
-
-          {/* ✅ Study Rooms Page */}
-          <Route path="/study-rooms" element={<StudyRoom />} />
-
-          {/* ✅ TopicTests & PrelimsTests protected by subscription */}
-          <Route
-            path="/topic-tests"
-            element={
-              <ProtectedTopicTests>
-                <TopicTests />
-              </ProtectedTopicTests>
-            }
-          />
-          <Route
-            path="/prelims-tests"
-            element={
-              <ProtectedTopicTests>
-                <PrelimsTests />
-              </ProtectedTopicTests>
-            }
-          />
-        </Routes>
-
-        {/* Global Modals */}
-        <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-        <SubscriptionPopup
-          isOpen={isSubscriptionOpen}
-          onClose={() => setIsSubscriptionOpen(false)}
+        <Route
+          path="/prelims-tests"
+          element={
+            <ProtectedTopicTests>
+              <PrelimsTests />
+            </ProtectedTopicTests>
+          }
         />
-        <UserInfoPopup
-          user={user}
-          isOpen={showInfoPopup}
-          onClose={() => setShowInfoPopup(false)}
+        <Route
+          path="/tests/:examType/:subject/:subtopic"
+          element={
+            <ProtectedTopicTests>
+              <TestListPage />
+            </ProtectedTopicTests>
+          }
         />
-      </div>
-    </Router>
+        <Route
+          path="/tests/:examType/:subject/:subtopic/:testId"
+          element={
+            <ProtectedTopicTests>
+              <TestRunner />
+            </ProtectedTopicTests>
+          }
+        />
+      </Routes>
+
+      {/* ✅ Footer only on homepage */}
+      {location.pathname === "/" && (
+        <Footer onContactClick={() => setIsContactOpen(true)} />
+      )}
+
+      {/* Global Modals */}
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <SubscriptionPopup
+        isOpen={isSubscriptionOpen}
+        onClose={() => setIsSubscriptionOpen(false)}
+      />
+      <UserInfoPopup
+        user={user}
+        isOpen={showInfoPopup}
+        onClose={() => setShowInfoPopup(false)}
+      />
+      <ContactUsModal
+        open={isContactOpen}
+        onClose={() => setIsContactOpen(false)}
+      />
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <Router>
+      <AppWrapper />
+    </Router>
+  );
+}

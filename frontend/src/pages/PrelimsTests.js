@@ -4,95 +4,158 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot, setDoc, increment } from "firebase/firestore";
+import {
+  doc,
+  onSnapshot,
+  setDoc,
+  increment,
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
-const subjects = {
-  History: {
-    tabs: ["Ancient", "Medieval", "Modern", "World", "Complete"],
-    total: { Ancient: 10, Medieval: 12, Modern: 8, World: 7, Complete: 20 },
+// ✅ Static info for UI (icons + backgrounds)
+const subjectMeta = {
+  history: {
     bg: "/images/history.jpg",
     icon: "/images/icons/history.png",
   },
-  Geography: {
-    tabs: ["Physical", "Human", "Indian", "World", "Complete"],
-    total: { Physical: 10, Human: 6, Indian: 9, World: 7, Complete: 25 },
+  geography: {
     bg: "/images/geography.jpg",
     icon: "/images/icons/geography.png",
   },
-  Polity: {
-    tabs: ["Constitution", "Governance", "Judiciary", "Parliament", "Complete"],
-    total: { Constitution: 12, Governance: 8, Judiciary: 10, Parliament: 7, Complete: 30 },
+  polity: {
     bg: "/images/polity.jpg",
     icon: "/images/icons/polity.png",
   },
-  Economics: {
-    tabs: ["Micro", "Macro", "Indian Economy", "Global Economy", "Complete"],
-    total: { Micro: 7, Macro: 9, "Indian Economy": 12, "Global Economy": 6, Complete: 22 },
+  economics: {
     bg: "/images/economy.jpg",
     icon: "/images/icons/economy.png",
   },
-  "Environment & Ecology": {
-    tabs: ["Climate", "Biodiversity", "Conservation", "Pollution", "Complete"],
-    total: { Climate: 10, Biodiversity: 11, Conservation: 8, Pollution: 6, Complete: 20 },
+  "environment-ecology": {
     bg: "/images/environment.jpg",
     icon: "/images/icons/environment.png",
   },
-  "Science & Tech": {
-    tabs: ["Physics", "Chemistry", "Biology", "Space & IT", "Complete"],
-    total: { Physics: 8, Chemistry: 7, Biology: 10, "Space & IT": 9, Complete: 25 },
+  "science-tech": {
     bg: "/images/science.jpg",
     icon: "/images/icons/science.png",
   },
-  // ✅ Prelims Tests is last now
-  "Prelims Tests": {
-    tabs: Array.from({ length: 15 }, (_, i) => `Test ${i + 1}`),
-    total: Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`Test ${i + 1}`, 1])),
+  "prelims-test": {
     bg: "/images/prelims.jpg",
     icon: "/images/icons/prelims.png",
   },
 };
 
 export default function PrelimsTests() {
-  const [activeSubject, setActiveSubject] = useState("History");
-  const [activeTab, setActiveTab] = useState("Ancient");
+  const [activeSubject, setActiveSubject] = useState("history");
+  const [activeTab, setActiveTab] = useState(null);
   const [attempted, setAttempted] = useState({});
   const [confirmTest, setConfirmTest] = useState(null);
 
+  const [subjects, setSubjects] = useState({});
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
+  // 🔹 Fetch subjects + subtopics dynamically from Firestore
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchSubjects = async () => {
+      try {
+        const subjectsData = {};
+        const subjectsSnap = await getDocs(
+          collection(db, "tests", "prelims", "subjects")
+        );
+        for (let subj of subjectsSnap.docs) {
+          if (!isMounted) return;
+          const subjId = subj.id; // e.g. "history"
+          const subtopicsSnap = await getDocs(
+            collection(db, "tests", "prelims", "subjects", subjId, "subtopics")
+          );
+
+          subjectsData[subjId] = {
+            tabs: [],
+            totals: {},
+            ...subjectMeta[subjId],
+          };
+
+          for (let sub of subtopicsSnap.docs) {
+            if (!isMounted) return;
+            const subId = sub.id; // e.g. "ancient"
+            const testsSnap = await getDocs(
+              collection(
+                db,
+                "tests",
+                "prelims",
+                "subjects",
+                subjId,
+                "subtopics",
+                subId,
+                "tests"
+              )
+            );
+            subjectsData[subjId].tabs.push(subId);
+            subjectsData[subjId].totals[subId] = testsSnap.size;
+          }
+        }
+
+        if (isMounted) {
+          setSubjects(subjectsData);
+
+          // set default active tab
+          if (Object.keys(subjectsData).length > 0) {
+            setActiveSubject(Object.keys(subjectsData)[0]);
+            setActiveTab(subjectsData[Object.keys(subjectsData)[0]].tabs[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching subjects:", err);
+      }
+    };
+
+    fetchSubjects();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // 🔹 Listen to auth + user progress from Firestore
   useEffect(() => {
+    let unsubProgress = null;
+
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
         const ref = doc(db, "prelimsProgress", u.uid);
-        const unsub = onSnapshot(ref, (snap) => {
+        unsubProgress = onSnapshot(ref, (snap) => {
           if (snap.exists()) setAttempted(snap.data());
         });
-        return () => unsub();
       } else {
         setAttempted({});
       }
     });
-    return () => unsubAuth();
+
+    return () => {
+      unsubAuth();
+      if (unsubProgress) unsubProgress();
+    };
   }, []);
 
+  if (!subjects[activeSubject]) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-gray-600 dark:text-gray-300">
+        Loading subjects...
+      </div>
+    );
+  }
+
   const subject = subjects[activeSubject];
-  const tabTotal = subject.total[activeTab];
+  const tabTotal = subject.totals[activeTab] || 0;
   const key = `${activeSubject}-${activeTab}`;
   const tabAttempted = attempted[key] || 0;
   const progressPercent = Math.min((tabAttempted / tabTotal) * 100, 100);
 
   // Confirm popup handler
-  const handleAttemptClick = () => {
-    if (!user) {
-      alert("Please login first");
-      return;
-    }
-    setConfirmTest({ subject: activeSubject, tab: activeTab });
-  };
-
   const confirmProceed = async () => {
     if (!user || !confirmTest) return;
     const key = `${confirmTest.subject}-${confirmTest.tab}`;
@@ -102,12 +165,14 @@ export default function PrelimsTests() {
       const ref = doc(db, "prelimsProgress", user.uid);
       await setDoc(ref, { [key]: increment(1) }, { merge: true });
 
-      // ALSO increment overall Prelims counter so TopicTests reflects it
+      // ALSO increment overall Prelims counter
       const overallRef = doc(db, "testsProgress", user.uid);
       await setDoc(overallRef, { prelims: increment(1) }, { merge: true });
 
       setConfirmTest(null);
-      navigate(`/tests/${confirmTest.subject.toLowerCase()}/${confirmTest.tab.toLowerCase()}`);
+
+      // ✅ FIX: include examType ("prelims") in the path
+      navigate(`/tests/prelims/${confirmTest.subject}/${confirmTest.tab}`);
     } catch (err) {
       console.error("Error starting prelims test:", err);
       alert("Something went wrong, please try again.");
@@ -140,7 +205,7 @@ export default function PrelimsTests() {
             }`}
           >
             <img src={subjects[subj].icon} alt={subj} className="w-6 h-6" />
-            {subj}
+            {subj.charAt(0).toUpperCase() + subj.slice(1)}
           </motion.button>
         ))}
       </motion.aside>
@@ -167,7 +232,7 @@ export default function PrelimsTests() {
             transition={{ duration: 0.5 }}
             className="text-3xl font-extrabold text-gray-900 dark:text-white mb-8"
           >
-            {activeSubject}
+            {activeSubject.charAt(0).toUpperCase() + activeSubject.slice(1)}
           </motion.h2>
 
           {/* Cards */}
@@ -175,24 +240,31 @@ export default function PrelimsTests() {
             {subject.tabs.map((tab) => {
               const tKey = `${activeSubject}-${tab}`;
               const attemptedCount = attempted[tKey] || 0;
-              const percent = Math.min((attemptedCount / subject.total[tab]) * 100, 100);
+              const percent = Math.min(
+                (attemptedCount / subject.totals[tab]) * 100,
+                100
+              );
 
               return (
                 <motion.div
                   key={tab}
                   whileHover={{ scale: 1.05 }}
                   className={`p-6 rounded-2xl shadow-xl backdrop-blur-md 
-                    ${activeTab === tab
-                      ? "bg-gradient-to-r from-[#0090DE] to-[#00c4ff] text-white"
-                      : "bg-white/90 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200"}`}
+                    ${
+                      activeTab === tab
+                        ? "bg-gradient-to-r from-[#0090DE] to-[#00c4ff] text-white"
+                        : "bg-white/90 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200"
+                    }`}
                   onClick={() => setActiveTab(tab)}
                 >
-                  <h3 className="text-xl font-bold mb-3">{tab}</h3>
+                  <h3 className="text-xl font-bold mb-3">
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </h3>
 
                   <p className="mb-2">
                     Progress:{" "}
                     <span className="font-bold">
-                      {attemptedCount}/{subject.total[tab]}
+                      {attemptedCount}/{subject.totals[tab]}
                     </span>
                   </p>
 
