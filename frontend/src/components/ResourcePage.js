@@ -7,6 +7,7 @@ import { FileText, FileType2 } from "lucide-react";
 function ResourcePage({ category, title }) {
   const [resources, setResources] = useState([]);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState(""); // ✅ Search state
 
   useEffect(() => {
     let unsub;
@@ -125,6 +126,13 @@ function ResourcePage({ category, title }) {
     newspapers: "Stay Updated with Daily Current Affairs",
   };
 
+  // ✅ Filter resources by search input
+  const filtered = resources.filter(
+    (res) =>
+      res.title?.toLowerCase().includes(search.toLowerCase()) ||
+      res.fileName?.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div className="relative min-h-screen pt-24 pb-20 px-6 overflow-hidden bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0f172a]">
       {/* 🌌 Animated Background Blobs */}
@@ -133,7 +141,7 @@ function ResourcePage({ category, title }) {
       <div className="absolute bottom-[-100px] left-[30%] w-[450px] h-[450px] bg-blue-500/20 rounded-full blur-3xl animate-blob animation-delay-4000"></div>
 
       {/* Heading + subtitle */}
-      <div className="relative text-center mb-12">
+      <div className="relative text-center mb-8">
         <motion.h2
           className="text-5xl font-extrabold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent drop-shadow-lg"
           initial={{ opacity: 0, y: -20 }}
@@ -146,19 +154,30 @@ function ResourcePage({ category, title }) {
         </p>
       </div>
 
+      {/* ✅ Search Bar */}
+      <div className="relative max-w-2xl mx-auto mb-10">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search for faster results..."
+          className="w-full p-4 rounded-xl border border-gray-700 bg-gray-900 text-gray-100 placeholder-gray-400 shadow-lg focus:ring-2 focus:ring-cyan-500"
+        />
+      </div>
+
       {/* Resources grid */}
-      {resources.length === 0 ? (
+      {filtered.length === 0 ? (
         <p className="relative text-center text-gray-400 italic z-10">
           {error === "fallback"
             ? "⚡ Showing fallback results. Please create Firestore index for better performance."
-            : "No resources available yet."}
+            : "No matching resources found."}
         </p>
       ) : (
         <motion.div
           layout
           className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 z-10"
         >
-          {resources.map((res, i) => (
+          {filtered.map((res, i) => (
             <motion.div
               key={res.id}
               initial={{ opacity: 0, y: 40 }}

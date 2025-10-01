@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,12 +9,12 @@ import {
   Youtube,
   Video,
   Users,
-  Trash2,
   ExternalLink,
+  Trash2,
   X,
 } from "lucide-react";
 import Logo from "../components/Logo.jsx";
-import AddTests from "../components/AddTests"; // ✅ separate file
+import AddTests from "../components/AddTests"; // ✅ Tests
 
 import { auth, db } from "../firebase";
 import {
@@ -42,6 +43,7 @@ const tabs = [
   { key: "yt", label: "Add YouTube Video", icon: Youtube },
   { key: "custom", label: "Add Custom Video", icon: Video },
   { key: "resources", label: "Add Resource Cards", icon: BookPlus },
+  { key: "library", label: "Library", icon: BookPlus }, // ✅ NEW TAB
   { key: "students", label: "Students", icon: Users },
   { key: "tests", label: "Add Tests", icon: BookPlus },
 ];
@@ -110,8 +112,9 @@ export default function Dashboard() {
             {active === "yt" && <AddYouTubeVideo />}
             {active === "custom" && <AddCustomVideo />}
             {active === "resources" && <AddResourceCards />}
+            {active === "library" && <LibraryAdmin />} {/* ✅ NEW */}
             {active === "students" && <StudentsTable />}
-            {active === "tests" && <AddTests />} {/* ✅ imported component */}
+            {active === "tests" && <AddTests />}
           </motion.div>
         </main>
       </div>
@@ -159,6 +162,127 @@ function StatCard({ title, collectionName }) {
     </div>
   );
 }
+
+/* ---------------------------
+   Component: LibraryAdmin
+----------------------------*/
+function LibraryAdmin() {
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState(null);
+  const [books, setBooks] = useState([]);
+  const [msg, setMsg] = useState("");
+  const storage = getStorage();
+
+  useEffect(() => {
+    const q = query(collection(db, "library"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) =>
+      setBooks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!title || !file) {
+      setMsg("⚠️ Please provide a title and select a file.");
+      return;
+    }
+    try {
+      const storagePath = `library/${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, storagePath);
+
+      await uploadBytes(fileRef, file);
+      const fileUrl = await getDownloadURL(fileRef);
+
+      await addDoc(collection(db, "library"), {
+        title,
+        fileName: file.name,
+        fileUrl,
+        storagePath,
+        createdAt: serverTimestamp(),
+      });
+
+      setMsg("✅ Book uploaded successfully!");
+      setTitle("");
+      setFile(null);
+    } catch (err) {
+      console.error(err);
+      setMsg("❌ Upload failed: " + err.message);
+    }
+  };
+
+  const handleDelete = async (book) => {
+    if (!window.confirm("Delete this book?")) return;
+    try {
+      if (book.storagePath) {
+        await deleteObject(ref(storage, book.storagePath));
+      }
+      await deleteDoc(doc(db, "library", book.id));
+    } catch (err) {
+      console.error("Delete failed:", err.message);
+    }
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4 text-gray-100">📚 Manage Library</h2>
+      <form
+        onSubmit={handleUpload}
+        className="flex flex-col gap-3 bg-gray-900 p-6 rounded-lg"
+      >
+        <input
+          type="text"
+          placeholder="Book Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="p-2 rounded bg-gray-800 text-white"
+        />
+        <input
+          type="file"
+          accept="application/pdf"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="p-2 text-white"
+        />
+        <button
+          type="submit"
+          className="px-4 py-2 bg-cyan-600 rounded text-white"
+        >
+          Upload PDF
+        </button>
+        {msg && <p className="text-sm text-cyan-400">{msg}</p>}
+      </form>
+
+      {/* Books list */}
+      <div className="mt-6 space-y-3">
+        {books.map((book) => (
+          <div
+            key={book.id}
+            className="flex items-center justify-between bg-gray-800 p-3 rounded"
+          >
+            <span className="text-white">{book.title}</span>
+            <div className="flex gap-2">
+              <a
+                href={book.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1 bg-green-600 text-white rounded"
+              >
+                Download
+              </a>
+              <button
+                onClick={() => handleDelete(book)}
+                className="px-3 py-1 bg-red-600 text-white rounded"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------
    Components: Add Resource Cards
 ----------------------------*/
