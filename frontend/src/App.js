@@ -25,7 +25,8 @@ import AuthModal from "./components/AuthModal";
 import SubscriptionPopup from "./components/SubscriptionPopup";
 import UserInfoPopup from "./components/UserInfoPopup";
 import Footer from "./components/Footer";
-import ContactUsModal from "./components/ContactUsModal"; // ✅ Contact modal
+import ContactUsModal from "./components/ContactUsModal"; 
+import CurrentAffairsBanner from "./components/CurrentAffairsBanner"; // ✅ Banner
 
 // Pages
 import Library from "./pages/Library";
@@ -41,6 +42,7 @@ import PrelimsTests from "./pages/PrelimsTests";
 import StudyRoom from "./pages/StudyRoom";
 import TestListPage from "./pages/TestListPage";
 import TestRunner from "./pages/TestRunner";
+import CurrentAffairs from "./pages/CurrentAffairs"; // ✅ New page
 
 // ✅ Homepage
 function HomePage() {
@@ -57,6 +59,7 @@ function HomePage() {
   return (
     <>
       <AnimatedBanner />
+      <CurrentAffairsBanner /> {/* ✅ New banner below hero */}
       <WelcomeMessage />
 
       <div className="max-w-5xl mx-auto px-6 py-10 text-center text-gray-700 dark:text-gray-300">
@@ -83,7 +86,7 @@ function AppWrapper() {
   const location = useLocation();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
-  const [isContactOpen, setIsContactOpen] = useState(false); // ✅ NEW
+  const [isContactOpen, setIsContactOpen] = useState(false);
 
   const [user, setUser] = useState(null);
   const [userDoc, setUserDoc] = useState(null);
@@ -173,6 +176,7 @@ function AppWrapper() {
         <Route path="/resources/newspapers" element={<Newspapers />} />
         <Route path="/tests" element={<Tests />} />
         <Route path="/study-rooms" element={<StudyRoom />} />
+        <Route path="/current-affairs" element={<CurrentAffairs />} /> {/* ✅ New route */}
 
         {/* Protected */}
         <Route

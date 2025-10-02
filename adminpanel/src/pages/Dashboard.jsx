@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+
 import {
   LogOut,
   LayoutGrid,
@@ -12,11 +13,13 @@ import {
   ExternalLink,
   Trash2,
   X,
+  Newspaper,
 } from "lucide-react";
 import Logo from "../components/Logo.jsx";
-import AddTests from "../components/AddTests"; // ✅ Tests
+import AddTests from "../components/AddTests";
 
 import { auth, db } from "../firebase";
+//import { motion, AnimatePresence } from "framer-motion"; 
 import {
   collection,
   addDoc,
@@ -37,13 +40,15 @@ import {
   deleteObject,
 } from "firebase/storage";
 
+// 🔹 Tabs
 const tabs = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
   { key: "room", label: "Create Room", icon: BookPlus },
   { key: "yt", label: "Add YouTube Video", icon: Youtube },
   { key: "custom", label: "Add Custom Video", icon: Video },
   { key: "resources", label: "Add Resource Cards", icon: BookPlus },
-  { key: "library", label: "Library", icon: BookPlus }, // ✅ NEW TAB
+  { key: "library", label: "Library", icon: BookPlus },
+  { key: "currentAffairs", label: "Current Affairs", icon: Newspaper }, // ✅ NEW
   { key: "students", label: "Students", icon: Users },
   { key: "tests", label: "Add Tests", icon: BookPlus },
 ];
@@ -52,10 +57,6 @@ export default function Dashboard() {
   const nav = useNavigate();
   const [active, setActive] = useState("overview");
 
-  useEffect(() => {
-    console.log("Admin UID from Firebase:", auth.currentUser?.uid);
-  }, []);
-
   const logout = () => {
     localStorage.removeItem("admin_auth");
     nav("/login", { replace: true });
@@ -63,6 +64,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-cyan-50 dark:from-slate-950 dark:to-slate-900">
+      {/* Header */}
       <header className="flex items-center justify-between px-6 py-4">
         <Logo />
         <div className="flex items-center gap-4">
@@ -99,7 +101,7 @@ export default function Dashboard() {
           </nav>
         </aside>
 
-        {/* Content */}
+        {/* Main Content */}
         <main className="glass rounded-2xl p-6">
           <motion.div
             key={active}
@@ -112,7 +114,8 @@ export default function Dashboard() {
             {active === "yt" && <AddYouTubeVideo />}
             {active === "custom" && <AddCustomVideo />}
             {active === "resources" && <AddResourceCards />}
-            {active === "library" && <LibraryAdmin />} {/* ✅ NEW */}
+            {active === "library" && <LibraryAdmin />}
+            {active === "currentAffairs" && <CurrentAffairsAdmin />} {/* ✅ */}
             {active === "students" && <StudentsTable />}
             {active === "tests" && <AddTests />}
           </motion.div>
@@ -121,6 +124,193 @@ export default function Dashboard() {
     </div>
   );
 }
+
+/* ---------------------------
+   Component: Current Affairs Admin
+   (PDF Upload + Headlines, auto-max 5)
+----------------------------*/
+function CurrentAffairsAdmin() {
+  const storage = getStorage();
+
+  // PDFs
+  const [pdfTitle, setPdfTitle] = useState("");
+  const [pdfDate, setPdfDate] = useState(new Date().toISOString().slice(0, 10));
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfs, setPdfs] = useState([]);
+
+  // Headlines
+  const [headline, setHeadline] = useState("");
+  const [headlines, setHeadlines] = useState([]);
+
+  useEffect(() => {
+    const q1 = query(collection(db, "currentAffairsPdfs"), orderBy("createdAt", "desc"));
+    const unsub1 = onSnapshot(q1, (snap) =>
+      setPdfs(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+
+    const q2 = query(collection(db, "currentAffairsHeadlines"), orderBy("createdAt", "desc"));
+    const unsub2 = onSnapshot(q2, (snap) =>
+      setHeadlines(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, []);
+
+  // Upload PDF
+  const uploadPdf = async (e) => {
+    e.preventDefault();
+    if (!pdfTitle || !pdfFile) return alert("Provide title and PDF file.");
+
+    const storagePath = `current-affairs/${Date.now()}-${pdfFile.name}`;
+    const fileRef = ref(storage, storagePath);
+    await uploadBytes(fileRef, pdfFile);
+    const fileUrl = await getDownloadURL(fileRef);
+
+    await addDoc(collection(db, "currentAffairsPdfs"), {
+      title: pdfTitle,
+      date: pdfDate,
+      fileName: pdfFile.name,
+      storagePath,
+      fileUrl,
+      createdAt: serverTimestamp(),
+    });
+
+    setPdfTitle("");
+    setPdfFile(null);
+  };
+
+  const deletePdf = async (item) => {
+    if (!window.confirm("Delete this PDF?")) return;
+    if (item.storagePath) await deleteObject(ref(storage, item.storagePath));
+    await deleteDoc(doc(db, "currentAffairsPdfs", item.id));
+  };
+
+  // Headlines (max 5)
+  const addHeadline = async (e) => {
+    e.preventDefault();
+    if (!headline.trim()) return;
+
+    const refColl = collection(db, "currentAffairsHeadlines");
+    await addDoc(refColl, { text: headline.trim(), createdAt: serverTimestamp() });
+    setHeadline("");
+
+    // prune extra
+    const q = query(refColl, orderBy("createdAt", "desc"));
+    onSnapshot(q, (snap) => {
+      const docs = snap.docs;
+      const extras = docs.slice(5);
+      extras.forEach((d) => deleteDoc(doc(db, "currentAffairsHeadlines", d.id)));
+    });
+  };
+
+  const deleteHeadline = async (id) => {
+    await deleteDoc(doc(db, "currentAffairsHeadlines", id));
+  };
+
+  return (
+    <div className="space-y-10">
+      {/* Upload PDF */}
+      <div className="rounded-xl bg-gray-900 p-6">
+        <h2 className="text-xl font-bold text-white mb-4">📰 Upload Daily PDF</h2>
+        <form onSubmit={uploadPdf} className="flex flex-col md:flex-row gap-3">
+          <input
+            value={pdfTitle}
+            onChange={(e) => setPdfTitle(e.target.value)}
+            placeholder="PDF Title"
+            className="flex-1 p-3 rounded bg-gray-800 text-white"
+          />
+          <input
+            type="date"
+            value={pdfDate}
+            onChange={(e) => setPdfDate(e.target.value)}
+            className="p-3 rounded bg-gray-800 text-white"
+          />
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setPdfFile(e.target.files[0])}
+            className="p-3 text-white"
+          />
+          <button className="px-4 py-2 bg-cyan-600 text-white rounded">Upload</button>
+        </form>
+
+        <div className="mt-6 space-y-2">
+          {pdfs.map((p) => (
+            <div
+              key={p.id}
+              className="flex items-center justify-between bg-gray-800 p-3 rounded"
+            >
+              <div>
+                <p className="text-white">{p.title}</p>
+                <p className="text-xs text-gray-400">
+                  {p.date} • {p.fileName}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={p.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 bg-green-600 text-white rounded"
+                >
+                  View
+                </a>
+                <button
+                  onClick={() => deletePdf(p)}
+                  className="px-3 py-1 bg-red-600 text-white rounded"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Headlines */}
+      <div className="rounded-xl bg-gray-900 p-6">
+        <h2 className="text-xl font-bold text-white mb-4">
+          🔥 Manage Headlines (max 5)
+        </h2>
+        <form onSubmit={addHeadline} className="flex gap-3">
+          <input
+            value={headline}
+            onChange={(e) => setHeadline(e.target.value)}
+            placeholder="Add headline"
+            className="flex-1 p-3 rounded bg-gray-800 text-white"
+          />
+          <button className="px-4 py-2 bg-purple-600 text-white rounded">
+            Add
+          </button>
+        </form>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {headlines.map((h) => (
+            <span
+              key={h.id}
+              className="px-3 py-2 bg-white/10 rounded-full text-white text-sm flex items-center gap-2"
+            >
+              {h.text}
+              <button
+                onClick={() => deleteHeadline(h.id)}
+                className="text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Oldest headline auto-deletes after 5.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 
 /* ---------------------------
    Components: Overview
