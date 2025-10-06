@@ -1,8 +1,12 @@
-// src/pages/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-
+import Papa from "papaparse";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   LogOut,
   LayoutGrid,
@@ -14,12 +18,15 @@ import {
   Trash2,
   X,
   Newspaper,
-} from "lucide-react";
+  PenLine,
+} from "lucide-react"; 
+
 import Logo from "../components/Logo.jsx";
 import AddTests from "../components/AddTests";
+import AddMainsQuestions from "./AddMainsQuestions";
+import StudentMainsData from "../components/StudentMainsData";
 
 import { auth, db } from "../firebase";
-//import { motion, AnimatePresence } from "framer-motion"; 
 import {
   collection,
   addDoc,
@@ -30,6 +37,8 @@ import {
   deleteDoc,
   doc,
   where,
+  setDoc,
+  getDocs
 } from "firebase/firestore";
 
 import {
@@ -48,9 +57,12 @@ const tabs = [
   { key: "custom", label: "Add Custom Video", icon: Video },
   { key: "resources", label: "Add Resource Cards", icon: BookPlus },
   { key: "library", label: "Library", icon: BookPlus },
-  { key: "currentAffairs", label: "Current Affairs", icon: Newspaper }, // ✅ NEW
+  { key: "currentAffairs", label: "Current Affairs", icon: Newspaper },
   { key: "students", label: "Students", icon: Users },
-  { key: "tests", label: "Add Tests", icon: BookPlus },
+  { key: "tests", label: "Add Prelims Test", icon: BookPlus },
+  { key: "mains", label: "Add Mains Questions", icon: PenLine },
+  { key: "mainsData", label: "Student Mains Data", icon: Users },
+  { key: "dailyTestControl", label: "Daily Test Control", icon: PenLine }, // ✅ new tab
 ];
 
 export default function Dashboard() {
@@ -115,15 +127,168 @@ export default function Dashboard() {
             {active === "custom" && <AddCustomVideo />}
             {active === "resources" && <AddResourceCards />}
             {active === "library" && <LibraryAdmin />}
-            {active === "currentAffairs" && <CurrentAffairsAdmin />} {/* ✅ */}
+            {active === "currentAffairs" && <CurrentAffairsAdmin />}
             {active === "students" && <StudentsTable />}
             {active === "tests" && <AddTests />}
+            {active === "mains" && <AddMainsQuestions />}
+            {active === "mainsData" && <StudentMainsData />}
+            {active === "dailyTestControl" && <DailyTestControl />} {/* ✅ New */}
           </motion.div>
         </main>
       </div>
     </div>
   );
 }
+
+/* ---------------------------
+   ✅ New Component: DailyTestControl
+----------------------------*/
+/* ---------------------------
+   ✅ New Component: DailyTestControl
+----------------------------*/
+function DailyTestControl() {
+  const [isActive, setIsActive] = useState(false);
+  const [file, setFile] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [todayTest, setTodayTest] = useState(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayRef = doc(db, "dailyQuizzes", today);
+
+  // ✅ Load config
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "dailyQuizConfig", "settings"), (snap) => {
+      if (snap.exists()) setIsActive(snap.data().isActive || false);
+    });
+    return () => unsub();
+  }, []);
+
+  // ✅ Load today's test (only one doc)
+  useEffect(() => {
+    const unsub = onSnapshot(todayRef, (snap) => {
+      if (snap.exists()) setTodayTest({ id: snap.id, ...snap.data() });
+      else setTodayTest(null);
+    });
+    return () => unsub();
+  }, []);
+
+  // ✅ Toggle
+  const toggleTest = async () => {
+    try {
+      await setDoc(doc(db, "dailyQuizConfig", "settings"), {
+        isActive: !isActive,
+      }, { merge: true });
+      setMsg(`✅ Test ${!isActive ? "activated" : "deactivated"} successfully`);
+    } catch (err) {
+      setMsg("❌ Error: " + err.message);
+    }
+  };
+
+  // ✅ Upload JSON
+  const uploadJson = async () => {
+    if (todayTest) {
+      return setMsg("⚠️ A test already exists for today. Please delete it first.");
+    }
+    if (!file) return setMsg("⚠️ Please select a JSON file first.");
+
+    try {
+      const text = await file.text();
+      const jsonData = JSON.parse(text);
+
+      if (!Array.isArray(jsonData)) {
+        return setMsg("❌ Invalid JSON: Expected an array of questions.");
+      }
+
+      await setDoc(todayRef, {
+        date: today,
+        questions: jsonData,
+        createdAt: serverTimestamp(),
+      });
+
+      setMsg("✅ Test JSON uploaded successfully!");
+      setFile(null);
+    } catch (err) {
+      setMsg("❌ Failed to upload: " + err.message);
+    }
+  };
+
+  // ✅ Delete today's test
+  const deleteTest = async () => {
+    if (!window.confirm("Delete today's uploaded test?")) return;
+    try {
+      await deleteDoc(todayRef);
+      setMsg("🗑️ Today's test deleted.");
+    } catch (err) {
+      setMsg("❌ Delete failed: " + err.message);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-100">⚡ Daily Test Control</h2>
+
+      {/* Toggle */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={toggleTest}
+          className={`px-6 py-2 rounded-lg font-semibold ${
+            isActive ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
+          } text-white`}
+        >
+          {isActive ? "Deactivate Test" : "Activate Test"}
+        </button>
+        <span className="text-gray-300">
+          Current Status:{" "}
+          <b className={isActive ? "text-green-400" : "text-red-400"}>
+            {isActive ? "Active" : "Inactive"}
+          </b>
+        </span>
+      </div>
+
+      {/* Upload JSON */}
+      <div className="bg-gray-900 p-6 rounded-xl space-y-4">
+        <h3 className="text-lg font-semibold text-white">📂 Upload Test JSON</h3>
+
+        {todayTest ? (
+          <div className="p-4 bg-gray-800 rounded-lg">
+            <p className="text-white font-medium mb-2">
+              ✅ Test already uploaded for today
+            </p>
+            <p className="text-sm text-gray-400">
+              {todayTest.questions?.length || 0} questions • {todayTest.date}
+            </p>
+            <button
+              onClick={deleteTest}
+              className="mt-3 px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+            >
+              Delete Today's Test
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              type="file"
+              accept="application/json"
+              onChange={(e) => setFile(e.target.files[0])}
+              className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 
+                file:rounded-lg file:border-0 file:text-sm file:font-semibold 
+                file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+            />
+            <button
+              onClick={uploadJson}
+              className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+            >
+              Upload Test File
+            </button>
+          </>
+        )}
+      </div>
+
+      {msg && <p className="text-sm mt-2 text-cyan-400">{msg}</p>}
+    </div>
+  );
+}
+
 
 /* ---------------------------
    Component: Current Affairs Admin
@@ -1128,14 +1293,129 @@ function RecentVideos({ filterType }) {
 ----------------------------*/
 function StudentsTable() {
   const [users, setUsers] = useState([]);
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [inputKey, setInputKey] = useState("");
+  const [search, setSearch] = useState("");
+  const [deleting, setDeleting] = useState(null); // user being deleted
+
+  const SECRET_KEY = "iShIkAaKsHaT"; // 🔑 Replace with your secure key
 
   useEffect(() => {
-    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "users"), orderBy("createdAt", sortOrder));
     const unsub = onSnapshot(q, (snap) =>
       setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
     return () => unsub();
-  }, []);
+  }, [sortOrder]);
+
+  const handleDelete = async (id) => {
+    if (inputKey !== SECRET_KEY) {
+      alert("❌ Wrong admin key! You cannot delete this student.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to delete this student?")) return;
+
+    try {
+      setDeleting(id);
+      const functions = getFunctions();
+      const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
+
+      await deleteUserAccount({ uid: id });
+
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      alert("✅ User deleted from Firebase Auth + Firestore (email sent)!");
+    } catch (err) {
+      console.error("Error deleting user:", err);
+      alert("❌ Failed to delete user: " + err.message);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  // 🔍 Filter users
+  const filteredUsers = users.filter(
+    (u) =>
+      (u.name || u.fullName || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
+      (u.email || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  // 📊 Stats
+  const totalStudents = users.length;
+  const planCounts = users.reduce((acc, u) => {
+    const plan = (u.plan || "Free").toLowerCase();
+    acc[plan] = (acc[plan] || 0) + 1;
+    return acc;
+  }, {});
+
+  // 📂 Export CSV
+  const exportCSV = () => {
+    const csv = Papa.unparse(
+      filteredUsers.map((u) => ({
+        Name: u.name || u.fullName || "—",
+        Email: u.email || "—",
+        Phone: u.phone || "—",
+        Plan: u.plan || "Free",
+        PlanExpiry: u.planExpiry?.toDate
+          ? u.planExpiry.toDate().toLocaleDateString()
+          : "—",
+        RegisteredOn: u.createdAt?.toDate
+          ? u.createdAt.toDate().toLocaleDateString()
+          : "—",
+      }))
+    );
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "students.csv");
+  };
+
+  // 📂 Export Excel
+  const exportExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(
+      filteredUsers.map((u) => ({
+        Name: u.name || u.fullName || "—",
+        Email: u.email || "—",
+        Phone: u.phone || "—",
+        Plan: u.plan || "Free",
+        PlanExpiry: u.planExpiry?.toDate
+          ? u.planExpiry.toDate().toLocaleDateString()
+          : "—",
+        RegisteredOn: u.createdAt?.toDate
+          ? u.createdAt.toDate().toLocaleDateString()
+          : "—",
+      }))
+    );
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+    XLSX.writeFile(workbook, "students.xlsx");
+  };
+
+  // 📂 Export PDF
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.text("Students Report", 14, 16);
+
+    const tableData = filteredUsers.map((u) => [
+      u.name || u.fullName || "—",
+      u.email || "—",
+      u.phone || "—",
+      u.plan || "Free",
+      u.planExpiry?.toDate
+        ? u.planExpiry.toDate().toLocaleDateString()
+        : "—",
+      u.createdAt?.toDate
+        ? u.createdAt.toDate().toLocaleDateString()
+        : "—",
+    ]);
+
+    autoTable(doc, {
+      head: [["Name", "Email", "Phone", "Plan", "Expiry", "Registered"]],
+      body: tableData,
+      startY: 22,
+    });
+
+    doc.save("students.pdf");
+  };
 
   return (
     <div>
@@ -1143,7 +1423,67 @@ function StudentsTable() {
         Students
       </h2>
 
-      {users.length === 0 ? (
+      {/* Stats */}
+      <div className="flex flex-wrap gap-4 mb-4">
+        <div className="px-4 py-2 bg-cyan-100 dark:bg-cyan-900 rounded-lg text-cyan-700 dark:text-cyan-200 font-semibold">
+          Total Students: {totalStudents}
+        </div>
+        {Object.entries(planCounts).map(([plan, count]) => (
+          <div
+            key={plan}
+            className="px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-700 dark:text-gray-300"
+          >
+            {plan.charAt(0).toUpperCase() + plan.slice(1)}: {count}
+          </div>
+        ))}
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <input
+          type="password"
+          placeholder="Enter Admin Key"
+          value={inputKey}
+          onChange={(e) => setInputKey(e.target.value)}
+          className="border rounded px-3 py-2 text-sm"
+        />
+        <button
+          onClick={() =>
+            setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+          }
+          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm"
+        >
+          Sort by Date ({sortOrder === "asc" ? "↑" : "↓"})
+        </button>
+        <input
+          type="text"
+          placeholder="Search by name/email"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 border rounded px-3 py-2 text-sm"
+        />
+        <button
+          onClick={exportCSV}
+          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm"
+        >
+          Export CSV
+        </button>
+        <button
+          onClick={exportExcel}
+          className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm"
+        >
+          Export Excel
+        </button>
+        <button
+          onClick={exportPDF}
+          className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+        >
+          Export PDF
+        </button>
+      </div>
+
+      {/* Table */}
+      {filteredUsers.length === 0 ? (
         <p className="text-sm text-gray-500">No students found.</p>
       ) : (
         <div className="overflow-auto rounded-xl border border-white/30 dark:border-white/10">
@@ -1152,17 +1492,43 @@ function StudentsTable() {
               <tr>
                 <Th>Name</Th>
                 <Th>Email</Th>
-                <Th>Plan</Th>
                 <Th>Phone</Th>
+                <Th>Plan</Th>
+                <Th>Expiry</Th>
+                <Th>Date of Registration</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/20">
-              {users.map((u) => (
+              {filteredUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-white/50 dark:hover:bg-white/5">
                   <Td>{u.name || u.fullName || "—"}</Td>
                   <Td>{u.email || "—"}</Td>
-                  <Td className="capitalize">{u.plan || "lakshya"}</Td>
                   <Td>{u.phone || "—"}</Td>
+                  <Td className="capitalize">{u.plan || "Free"}</Td>
+                  <Td>
+                    {u.planExpiry?.toDate
+                      ? u.planExpiry.toDate().toLocaleDateString()
+                      : "—"}
+                  </Td>
+                  <Td>
+                    {u.createdAt?.toDate
+                      ? u.createdAt.toDate().toLocaleDateString()
+                      : "—"}
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => handleDelete(u.id)}
+                      disabled={deleting === u.id}
+                      className={`px-3 py-1 rounded text-xs text-white ${
+                        deleting === u.id
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-red-500 hover:bg-red-600"
+                      }`}
+                    >
+                      {deleting === u.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </Td>
                 </tr>
               ))}
             </tbody>
@@ -1181,5 +1547,10 @@ function Th({ children }) {
   );
 }
 function Td({ children }) {
-  return <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{children}</td>;
+  return (
+    <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{children}</td>
+  );
 }
+
+
+

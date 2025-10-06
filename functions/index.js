@@ -42,12 +42,21 @@ function loginHtml({ name, when }) {
   <p>Hello ${name || "Aspirant"}, we noticed a login on <b>${when}</b>.</p>`;
 }
 
+function accountDeletedHtml({ name }) {
+  return `
+  <h2>Account Deleted ❌</h2>
+  <p>Hello ${name || "Aspirant"}, your ${BRAND} account has been removed by the administrator.</p>
+  <p>If you think this is a mistake, please contact support.</p>`;
+}
+
 async function sendMail({ to, subject, html }) {
   const mail = { from: `${BRAND} <${GMAIL_USER}>`, to, subject, html };
   await transporter.sendMail(mail);
 }
 
-// ---------------- FUNCTIONS ----------------
+/* ---------------------------
+   FUNCTIONS
+---------------------------- */
 
 // 1) Request OTP
 exports.requestSignupOtpV1 = functions.https.onCall(async (data, context) => {
@@ -183,4 +192,59 @@ exports.sendLoginEmailV1 = functions.https.onCall(async (data, context) => {
   await ref.set(updates, { merge: true });
 
   return { ok: true };
+});
+
+/* -------------------------------------------------
+   4) 🔥 Delete User (Admin Only)
+   (does not affect OTP/Login logic)
+------------------------------------------------- */
+exports.deleteUserAccount = functions.https.onCall(async (data, context) => {
+  // ✅ Only allow your admin UID
+  if (context.auth?.uid !== "cEqNmVzP17Y1EUt6JCZTDNpw5W93") {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Only admin can delete users."
+    );
+  }
+
+  const uid = data && data.uid;
+  if (!uid) throw new functions.https.HttpsError("invalid-argument", "Missing user ID");
+
+  try {
+    // Fetch user data from Firestore (for email)
+    const ref = db.collection("users").doc(uid);
+    const snap = await ref.get();
+    let email = "";
+    let name = "";
+    if (snap.exists) {
+      const d = snap.data();
+      email = d.email || "";
+      name = d.name || "";
+    } else {
+      // fallback: check Auth
+      const authUser = await admin.auth().getUser(uid);
+      email = authUser.email || "";
+      name = authUser.displayName || "";
+    }
+
+    // 1. Delete from Firebase Authentication
+    await admin.auth().deleteUser(uid);
+
+    // 2. Delete Firestore user document
+    await ref.delete();
+
+    // 3. Send account deleted email (if email exists)
+    if (email) {
+      await sendMail({
+        to: email,
+        subject: `${BRAND} – Account Deleted`,
+        html: accountDeletedHtml({ name }),
+      });
+    }
+
+    return { success: true, message: `User ${uid} deleted from Auth + Firestore` };
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    throw new functions.https.HttpsError("unknown", error.message, error);
+  }
 });

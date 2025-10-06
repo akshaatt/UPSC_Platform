@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 @import "react-image-crop/dist/ReactCrop.css";
 
 /* 🔹 Disintegrate animation */
@@ -100,21 +101,129 @@
   0% { transform: translateX(0) translateY(0) rotate(45deg); opacity: 1; }
   100% { transform: translateX(1000px) translateY(500px) rotate(45deg); opacity: 0; }
 }
+
+/* 🔹 Blobs floating background */
 @keyframes blob {
   0% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }
   66% { transform: translate(-20px, 20px) scale(0.9); }
   100% { transform: translate(0px, 0px) scale(1); }
 }
-
 .animate-blob {
   animation: blob 12s infinite;
 }
-
 .animation-delay-2000 {
   animation-delay: 2s;
 }
-
 .animation-delay-4000 {
   animation-delay: 4s;
+}
+/* Stars Animation */
+.stars, .stars2, .stars3 {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  /*background: transparent url("https://www.script-tutorials.com/demos/360/images/stars.png") repeat top center;*/
+  animation: moveStars 200s linear infinite;
+}
+
+.stars2 {
+  background-image: url("https://www.script-tutorials.com/demos/360/images/stars2.png");
+  animation: moveStars 400s linear infinite;
+}
+
+.stars3 {
+  background-image: url("https://www.script-tutorials.com/demos/360/images/stars3.png");
+  animation: moveStars 600s linear infinite;
+}
+
+@keyframes moveStars {
+  from { transform: translateY(0px); }
+  to { transform: translateY(-1000px); }
+}
+
+/* Floating Blobs */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+.animate-blob {
+  animation: blob 20s infinite;
+}
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+/* Smooth Starfield Background */
+.stars, .stars2, .stars3 {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background-repeat: repeat;
+  background-position: top center;
+  transform: translate3d(0, 0, 0);
+}
+
+.stars {
+  /*background-image: url("https://www.script-tutorials.com/demos/360/images/stars.png");*/
+  animation: driftStars 100s linear infinite;
+}
+.stars2 {
+  background-image: url("https://www.script-tutorials.com/demos/360/images/stars2.png");
+  animation: driftStars 200s linear infinite;
+}
+.stars3 {
+  background-image: url("https://www.script-tutorials.com/demos/360/images/stars3.png");
+  animation: driftStars 400s linear infinite;
+}
+
+@keyframes driftStars {
+  from { transform: translate3d(0px, 0px, 0); }
+  to { transform: translate3d(-500px, -1000px, 0); }
+}
+
+/* Floating Blobs */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(40px, -30px) scale(1.1); }
+  66% { transform: translate(-30px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+.animate-blob {
+  animation: blob 25s infinite ease-in-out;
+}
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+.stars, .stars2, .stars3 {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  /*background: transparent url("https://www.script-tutorials.com/demos/360/images/stars.png") repeat top center;*/
+  z-index: 0;
+  animation: moveStars 100s linear infinite;
+}
+
+.stars2 {
+  background-size: contain;
+  animation: moveStars 200s linear infinite;
+  opacity: 0.5;
+}
+
+.stars3 {
+  background-size: cover;
+  animation: moveStars 300s linear infinite;
+  opacity: 0.3;
+}
+
+@keyframes moveStars {
+  from { transform: translateY(0); }
+  to { transform: translateY(-1000px); }
 }

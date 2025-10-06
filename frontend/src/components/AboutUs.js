@@ -168,8 +168,8 @@ function AboutUs() {
         </motion.div>
 
         {/* right images */}
-        <div className="relative flex items-center justify-center">
-          <div className="relative w-[420px] h-[420px] flex items-center justify-center">
+        <div className="relative flex items-center justify-center ">
+          <div className="relative w-[420px] h-[420px] flex items-center justify-center ">
             <AnimatePresence>
               {images.map((img, idx) => {
                 const slotIdx = (idx - activeIndex + images.length) % images.length;
@@ -180,7 +180,7 @@ function AboutUs() {
                     key={img.src + activeIndex}
                     src={img.src}
                     alt={img.alt}
-                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-xl"
+                    className="absolute left-1/2  -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-xl"
                     style={{ width: isMobile ? 180 : 240, height: "auto" }}
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{

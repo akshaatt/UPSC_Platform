@@ -1,11 +1,32 @@
-import React, { useState } from "react";
+// src/components/ToppersTalk.js
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
 
-export default function ToppersTalk({ videos = [] }) {
+export default function ToppersTalk() {
+  const [videos, setVideos] = useState([]);
   const [index, setIndex] = useState(0);
   const [activeVideo, setActiveVideo] = useState(null);
   const visibleCount = 3;
+
+  // 🔥 Fetch videos from Firestore
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "videos"));
+        const videoData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setVideos(videoData);
+      } catch (err) {
+        console.error("❌ Failed to load videos:", err);
+      }
+    };
+    fetchVideos();
+  }, []);
 
   const handleNext = () => {
     if (index < videos.length - visibleCount) setIndex(index + 1);
@@ -14,13 +35,11 @@ export default function ToppersTalk({ videos = [] }) {
     if (index > 0) setIndex(index - 1);
   };
 
-  // Helper to get videoId
+  // Helper to get YouTube videoId
   const getVideoId = (url) => {
     try {
       const urlObj = new URL(url);
-      return (
-        urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop()
-      );
+      return urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
     } catch {
       return "";
     }
@@ -59,15 +78,13 @@ export default function ToppersTalk({ videos = [] }) {
           >
             {videos.map((video, i) => {
               const videoId = getVideoId(video.url);
-
-              // Try maxresdefault first, then fallback to hqdefault
               const thumbnail = videoId
                 ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
                 : "https://via.placeholder.com/300x200.png?text=No+Preview";
 
               return (
                 <motion.div
-                  key={i}
+                  key={video.id || i}
                   whileHover={{ scale: 1.05 }}
                   className="w-[300px] flex-shrink-0 cursor-pointer rounded-2xl overflow-hidden shadow-xl bg-gray-900/80 backdrop-blur-md border border-gray-700"
                   onClick={() => setActiveVideo(video.url)}

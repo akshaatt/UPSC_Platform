@@ -1,4 +1,4 @@
-// src/pages/PrelimsTests.js
+// src/pages/PrelimsTests.jsx
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
@@ -13,113 +13,37 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-// ✅ Static info for UI (icons + backgrounds)
+// ✅ Static structure: subjects & subtopics
+const subjectStructure = {
+  history: ["ancient", "medieval", "modern", "complete"],
+  geography: ["physical", "human", "indian", "world", "complete"],
+  economics: ["micro", "macro", "indian economy", "global economics", "complete"],
+  polity: ["constitution", "parliament", "judiciary", "governance", "complete"],
+  "environment-ecology": ["biodiversity", "climate", "pollution", "conservation", "complete"],
+  "science-tech": ["physics", "chemistry", "biology", "space&it", "complete"],
+  "prelims-test": ["test"],
+};
+
+// ✅ Meta info (bg + icon)
 const subjectMeta = {
-  history: {
-    bg: "/images/history.jpg",
-    icon: "/images/icons/history.png",
-  },
-  geography: {
-    bg: "/images/geography.jpg",
-    icon: "/images/icons/geography.png",
-  },
-  polity: {
-    bg: "/images/polity.jpg",
-    icon: "/images/icons/polity.png",
-  },
-  economics: {
-    bg: "/images/economy.jpg",
-    icon: "/images/icons/economy.png",
-  },
-  "environment-ecology": {
-    bg: "/images/environment.jpg",
-    icon: "/images/icons/environment.png",
-  },
-  "science-tech": {
-    bg: "/images/science.jpg",
-    icon: "/images/icons/science.png",
-  },
-  "prelims-test": {
-    bg: "/images/prelims.jpg",
-    icon: "/images/icons/prelims.png",
-  },
+  history: { bg: "/images/history.jpg", icon: "/images/icons/history.png" },
+  geography: { bg: "/images/geography.jpg", icon: "/images/icons/geography.png" },
+  economics: { bg: "/images/economy.jpg", icon: "/images/icons/economy.png" },
+  polity: { bg: "/images/polity.jpg", icon: "/images/icons/polity.png" },
+  "environment-ecology": { bg: "/images/environment.jpg", icon: "/images/icons/environment.png" },
+  "science-tech": { bg: "/images/science.jpg", icon: "/images/icons/science.png" },
+  "prelims-test": { bg: "/images/prelims.jpg", icon: "/images/icons/prelims.png" },
 };
 
 export default function PrelimsTests() {
   const [activeSubject, setActiveSubject] = useState("history");
-  const [activeTab, setActiveTab] = useState(null);
+  const [testsCount, setTestsCount] = useState({});
   const [attempted, setAttempted] = useState({});
-  const [confirmTest, setConfirmTest] = useState(null);
-
-  const [subjects, setSubjects] = useState({});
   const [user, setUser] = useState(null);
+  const [confirmTest, setConfirmTest] = useState(null);
   const navigate = useNavigate();
 
-  // 🔹 Fetch subjects + subtopics dynamically from Firestore
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchSubjects = async () => {
-      try {
-        const subjectsData = {};
-        const subjectsSnap = await getDocs(
-          collection(db, "tests", "prelims", "subjects")
-        );
-        for (let subj of subjectsSnap.docs) {
-          if (!isMounted) return;
-          const subjId = subj.id; // e.g. "history"
-          const subtopicsSnap = await getDocs(
-            collection(db, "tests", "prelims", "subjects", subjId, "subtopics")
-          );
-
-          subjectsData[subjId] = {
-            tabs: [],
-            totals: {},
-            ...subjectMeta[subjId],
-          };
-
-          for (let sub of subtopicsSnap.docs) {
-            if (!isMounted) return;
-            const subId = sub.id; // e.g. "ancient"
-            const testsSnap = await getDocs(
-              collection(
-                db,
-                "tests",
-                "prelims",
-                "subjects",
-                subjId,
-                "subtopics",
-                subId,
-                "tests"
-              )
-            );
-            subjectsData[subjId].tabs.push(subId);
-            subjectsData[subjId].totals[subId] = testsSnap.size;
-          }
-        }
-
-        if (isMounted) {
-          setSubjects(subjectsData);
-
-          // set default active tab
-          if (Object.keys(subjectsData).length > 0) {
-            setActiveSubject(Object.keys(subjectsData)[0]);
-            setActiveTab(subjectsData[Object.keys(subjectsData)[0]].tabs[0]);
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching subjects:", err);
-      }
-    };
-
-    fetchSubjects();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // 🔹 Listen to auth + user progress from Firestore
+  // 🔹 Listen to auth + user progress
   useEffect(() => {
     let unsubProgress = null;
 
@@ -141,43 +65,62 @@ export default function PrelimsTests() {
     };
   }, []);
 
-  if (!subjects[activeSubject]) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-gray-600 dark:text-gray-300">
-        Loading subjects...
-      </div>
-    );
-  }
+  // 🔹 Fetch tests count from Firestore (per subject + subtopic)
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const counts = {};
+        for (const subj of Object.keys(subjectStructure)) {
+          counts[subj] = {};
+          for (const tab of subjectStructure[subj]) {
+            const testsRef = collection(
+              db,
+              "tests",
+              "prelims",
+              "subjects",
+              subj,
+              "subtopics",
+              tab,
+              "tests"
+            );
+            const snap = await getDocs(testsRef);
+            counts[subj][tab] = snap.size; // total tests in that subtopic
+          }
+        }
+        setTestsCount(counts);
+      } catch (err) {
+        console.error("Error fetching test counts:", err);
+      }
+    };
 
-  const subject = subjects[activeSubject];
-  const tabTotal = subject.totals[activeTab] || 0;
-  const key = `${activeSubject}-${activeTab}`;
-  const tabAttempted = attempted[key] || 0;
-  const progressPercent = Math.min((tabAttempted / tabTotal) * 100, 100);
+    fetchCounts();
+  }, []);
 
-  // Confirm popup handler
-  const confirmProceed = async () => {
-    if (!user || !confirmTest) return;
-    const key = `${confirmTest.subject}-${confirmTest.tab}`;
+  // 🔹 Confirm popup handler
+  const confirmProceed = async (subj, tab) => {
+    if (!user) {
+      alert("Please login to attempt tests");
+      return;
+    }
+    const key = `${subj}-${tab}`;
 
     try {
-      // update per-test counters
       const ref = doc(db, "prelimsProgress", user.uid);
       await setDoc(ref, { [key]: increment(1) }, { merge: true });
 
-      // ALSO increment overall Prelims counter
       const overallRef = doc(db, "testsProgress", user.uid);
       await setDoc(overallRef, { prelims: increment(1) }, { merge: true });
 
       setConfirmTest(null);
 
-      // ✅ FIX: include examType ("prelims") in the path
-      navigate(`/tests/prelims/${confirmTest.subject}/${confirmTest.tab}`);
+      navigate(`/tests/prelims/${subj}/${tab}`);
     } catch (err) {
-      console.error("Error starting prelims test:", err);
+      console.error("Error starting test:", err);
       alert("Something went wrong, please try again.");
     }
   };
+
+  const subject = subjectMeta[activeSubject];
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900 pt-24">
@@ -188,23 +131,20 @@ export default function PrelimsTests() {
         transition={{ duration: 0.6 }}
         className="w-72 bg-white dark:bg-gray-800 shadow-xl p-6 flex flex-col gap-4"
       >
-        <h2 className="text-xl font-bold text-[#0090DE] mb-4">📚 Categories</h2>
-        {Object.keys(subjects).map((subj) => (
+        <h2 className="text-xl font-bold text-[#0090DE] mb-4">📚 Subjects</h2>
+        {Object.keys(subjectStructure).map((subj) => (
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             key={subj}
-            onClick={() => {
-              setActiveSubject(subj);
-              setActiveTab(subjects[subj].tabs[0]);
-            }}
+            onClick={() => setActiveSubject(subj)}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${
               activeSubject === subj
                 ? "bg-gradient-to-r from-[#0090DE] to-[#00c4ff] text-white font-semibold shadow-lg"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
             }`}
           >
-            <img src={subjects[subj].icon} alt={subj} className="w-6 h-6" />
+            <img src={subjectMeta[subj]?.icon} alt={subj} className="w-6 h-6" />
             {subj.charAt(0).toUpperCase() + subj.slice(1)}
           </motion.button>
         ))}
@@ -220,11 +160,10 @@ export default function PrelimsTests() {
           exit={{ opacity: 0 }}
           transition={{ duration: 1 }}
           className="absolute inset-0 pointer-events-none bg-cover bg-center"
-          style={{ backgroundImage: `url(${subject.bg})` }}
+          style={{ backgroundImage: `url(${subject?.bg})` }}
         />
 
         <div className="relative z-10">
-          {/* Header */}
           <motion.h2
             key={activeSubject}
             initial={{ opacity: 0, y: -20 }}
@@ -235,27 +174,19 @@ export default function PrelimsTests() {
             {activeSubject.charAt(0).toUpperCase() + activeSubject.slice(1)}
           </motion.h2>
 
-          {/* Cards */}
+          {/* Subtopics as Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {subject.tabs.map((tab) => {
-              const tKey = `${activeSubject}-${tab}`;
-              const attemptedCount = attempted[tKey] || 0;
-              const percent = Math.min(
-                (attemptedCount / subject.totals[tab]) * 100,
-                100
-              );
+            {subjectStructure[activeSubject].map((tab) => {
+              const key = `${activeSubject}-${tab}`;
+              const attemptedCount = attempted[key] || 0;
+              const total = testsCount[activeSubject]?.[tab] || 0;
+              const percent = total > 0 ? Math.min((attemptedCount / total) * 100, 100) : 0;
 
               return (
                 <motion.div
                   key={tab}
                   whileHover={{ scale: 1.05 }}
-                  className={`p-6 rounded-2xl shadow-xl backdrop-blur-md 
-                    ${
-                      activeTab === tab
-                        ? "bg-gradient-to-r from-[#0090DE] to-[#00c4ff] text-white"
-                        : "bg-white/90 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200"
-                    }`}
-                  onClick={() => setActiveTab(tab)}
+                  className="p-6 rounded-2xl shadow-xl bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
                 >
                   <h3 className="text-xl font-bold mb-3">
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -264,7 +195,7 @@ export default function PrelimsTests() {
                   <p className="mb-2">
                     Progress:{" "}
                     <span className="font-bold">
-                      {attemptedCount}/{subject.totals[tab]}
+                      {attemptedCount}/{total}
                     </span>
                   </p>
 
@@ -280,12 +211,8 @@ export default function PrelimsTests() {
 
                   {/* Attempt button */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveTab(tab);
-                      setConfirmTest({ subject: activeSubject, tab });
-                    }}
-                    className="px-5 py-2 rounded-lg bg-white text-[#0090DE] font-semibold shadow hover:shadow-lg transition"
+                    onClick={() => setConfirmTest({ subject: activeSubject, tab })}
+                    className="px-5 py-2 rounded-lg bg-[#0090DE] text-white font-semibold shadow hover:shadow-lg transition"
                   >
                     Attempt Test →
                   </button>
@@ -326,7 +253,7 @@ export default function PrelimsTests() {
                   Cancel
                 </button>
                 <button
-                  onClick={confirmProceed}
+                  onClick={() => confirmProceed(confirmTest.subject, confirmTest.tab)}
                   className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#0090DE] to-[#00c4ff] text-white hover:shadow-lg"
                 >
                   Yes, Proceed 🚀

@@ -3,13 +3,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  doc,
-  onSnapshot,
-  setDoc,
-  increment,
-  getDoc,
-} from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 // Icons
@@ -29,67 +23,31 @@ const PLAN_LIMITS = {
 export default function TopicTests() {
   const [user, setUser] = useState(null);
   const [plan, setPlan] = useState("lakshya");
-  const [testsTaken, setTestsTaken] = useState({ prelims: 0, csat: 0, mains: 0 });
-  const [confirmTest, setConfirmTest] = useState(null); // "prelims" | "csat" | "mains"
+  const [testsTaken, setTestsTaken] = useState({
+    prelims: 0,
+    csat: 0,
+    mains: 0,
+  });
+  const [confirmTest, setConfirmTest] = useState(null);
   const navigate = useNavigate();
 
-  // Ensure progress doc exists for user
-  const ensureProgressDoc = async (uid) => {
-    const ref = doc(db, "testsProgress", uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      // create with zeros so increment never fails
-      await setDoc(
-        ref,
-        { prelims: 0, csat: 0, mains: 0 },
-        { merge: true }
-      );
-    }
-  };
-
-  // Listen to auth + user plan + tests progress
+  // Listen to auth + user plan
   useEffect(() => {
-    let unsubUser = null;
-    let unsubTests = null;
-
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
-        // user plan
         const userRef = doc(db, "users", u.uid);
-        unsubUser = onSnapshot(userRef, (snap) => {
+        onSnapshot(userRef, (snap) => {
           if (snap.exists()) setPlan(snap.data().plan || "lakshya");
           else setPlan("lakshya");
         });
-
-        // progress
-        (async () => {
-          await ensureProgressDoc(u.uid);
-          const testsRef = doc(db, "testsProgress", u.uid);
-          unsubTests = onSnapshot(testsRef, (snap) => {
-            if (snap.exists()) {
-              const data = snap.data();
-              setTestsTaken({
-                prelims: Number(data.prelims) || 0,
-                csat: Number(data.csat) || 0,
-                mains: Number(data.mains) || 0,
-              });
-            } else {
-              setTestsTaken({ prelims: 0, csat: 0, mains: 0 });
-            }
-          });
-        })();
       } else {
         setPlan("lakshya");
         setTestsTaken({ prelims: 0, csat: 0, mains: 0 });
       }
     });
 
-    return () => {
-      unsubAuth();
-      if (unsubUser) unsubUser();
-      if (unsubTests) unsubTests();
-    };
+    return () => unsubAuth();
   }, []);
 
   // Helper: remaining tests
@@ -114,10 +72,10 @@ export default function TopicTests() {
   };
 
   // Proceed from confirm modal
-  const startTest = async (type) => {
+  const startTest = (type) => {
     setConfirmTest(null);
 
-    // Plan-limit check based on current counters
+    // Plan-limit check
     const limit = PLAN_LIMITS[plan]?.[type];
     const taken = testsTaken[type] || 0;
     if (limit !== Infinity && taken >= limit) {
@@ -125,26 +83,37 @@ export default function TopicTests() {
       return;
     }
 
-    try {
-      if (type === "prelims") {
-        // Do NOT increment here. Increment happens in PrelimsTests when the user actually starts a specific test.
-        navigate("/prelims-tests");
-      } else {
-        // CSAT & Mains: increment now
-        const ref = doc(db, "testsProgress", user.uid);
-        await setDoc(ref, { [type]: increment(1) }, { merge: true });
-        alert(`✅ Your ${type.toUpperCase()} test has started. Good luck!`);
-      }
-    } catch (err) {
-      console.error("Error updating tests:", err);
-      alert("Something went wrong while starting the test. Please try again.");
+    // 🔥 Update counter locally
+    setTestsTaken((prev) => ({
+      ...prev,
+      [type]: (prev[type] || 0) + 1,
+    }));
+
+    if (type === "prelims") {
+      navigate("/prelims-tests");
+    } else if (type === "csat") {
+      navigate("/csat-tests"); // ✅ create CsatTests page
+    } else if (type === "mains") {
+      navigate("/mains-tab");  // ✅ correct file/page for Mains
     }
   };
 
   const cards = [
-    { key: "prelims", title: "Prelims", desc: "Objective questions to test your basics." },
-    { key: "csat", title: "CSAT", desc: "Aptitude, reasoning, and comprehension practice." },
-    { key: "mains", title: "Mains", desc: "Answer writing, essays, and descriptive tests." },
+    {
+      key: "prelims",
+      title: "Prelims",
+      desc: "Objective questions to test your basics.",
+    },
+    {
+      key: "csat",
+      title: "CSAT",
+      desc: "Aptitude, reasoning, and comprehension practice.",
+    },
+    {
+      key: "mains",
+      title: "Mains",
+      desc: "Answer writing, essays, and descriptive tests.",
+    },
   ];
 
   return (
@@ -157,7 +126,8 @@ export default function TopicTests() {
         <p className="text-center text-gray-500">Please login to access tests.</p>
       ) : !["safalta", "shikhar", "samarpan"].includes(plan) ? (
         <p className="text-center text-gray-500">
-          Upgrade your plan to Safalta, Shikhar, or Samarpan to unlock topic tests.
+          Upgrade your plan to Safalta, Shikhar, or Samarpan to unlock topic
+          tests.
         </p>
       ) : (
         <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-10">
@@ -177,9 +147,17 @@ export default function TopicTests() {
               >
                 {/* Image + Title */}
                 <div className="p-6 text-center">
-                  <img src={images[c.key]} alt={c.title} className="w-20 h-20 mx-auto mb-4" />
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">{c.title}</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{c.desc}</p>
+                  <img
+                    src={images[c.key]}
+                    alt={c.title}
+                    className="w-20 h-20 mx-auto mb-4"
+                  />
+                  <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
+                    {c.title}
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    {c.desc}
+                  </p>
                 </div>
 
                 {/* Stats */}
@@ -188,12 +166,17 @@ export default function TopicTests() {
                     Tests Taken: <span className="font-semibold">{taken}</span>
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Tests Left: <span className="font-semibold">{remaining}</span>
+                    Tests Left:{" "}
+                    <span className="font-semibold">{remaining}</span>
                   </p>
                   {limit === Infinity ? (
-                    <p className="text-xs text-green-500 font-semibold">Unlimited access 🚀</p>
+                    <p className="text-xs text-green-500 font-semibold">
+                      Unlimited access 🚀
+                    </p>
                   ) : (
-                    <p className="text-xs text-gray-500">(Plan limit: {limit})</p>
+                    <p className="text-xs text-gray-500">
+                      (Plan limit: {limit})
+                    </p>
                   )}
                 </div>
 
@@ -212,7 +195,7 @@ export default function TopicTests() {
         </div>
       )}
 
-      {/* Confirmation Modal (simple) */}
+      {/* Confirmation Modal */}
       <AnimatePresence>
         {confirmTest && (
           <motion.div

@@ -25,8 +25,9 @@ import AuthModal from "./components/AuthModal";
 import SubscriptionPopup from "./components/SubscriptionPopup";
 import UserInfoPopup from "./components/UserInfoPopup";
 import Footer from "./components/Footer";
-import ContactUsModal from "./components/ContactUsModal"; 
-import CurrentAffairsBanner from "./components/CurrentAffairsBanner"; // ✅ Banner
+import ContactUsModal from "./components/ContactUsModal";
+import CurrentAffairsBanner from "./components/CurrentAffairsBanner";
+import DailyExam from "./components/DailyExam"; // ✅ Added
 
 // Pages
 import Library from "./pages/Library";
@@ -42,7 +43,9 @@ import PrelimsTests from "./pages/PrelimsTests";
 import StudyRoom from "./pages/StudyRoom";
 import TestListPage from "./pages/TestListPage";
 import TestRunner from "./pages/TestRunner";
-import CurrentAffairs from "./pages/CurrentAffairs"; // ✅ New page
+import CurrentAffairs from "./pages/CurrentAffairs";
+import MainsTab from "./pages/MainsTab"; 
+import DailyQuiz from "./pages/DailyQuiz"; // ✅ Added
 
 // ✅ Homepage
 function HomePage() {
@@ -59,7 +62,7 @@ function HomePage() {
   return (
     <>
       <AnimatedBanner />
-      <CurrentAffairsBanner /> {/* ✅ New banner below hero */}
+      <CurrentAffairsBanner />
       <WelcomeMessage />
 
       <div className="max-w-5xl mx-auto px-6 py-10 text-center text-gray-700 dark:text-gray-300">
@@ -77,6 +80,11 @@ function HomePage() {
       <TestPreview />
       <ToppersTalk videos={videos} />
       <StudyRoomsPreview />
+
+      {/* ✅ Daily Exam Component */}
+      
+        <DailyExam />
+      
     </>
   );
 }
@@ -130,9 +138,7 @@ function AppWrapper() {
 
   const ProtectedTopicTests = ({ children }) => {
     if (loading)
-      return (
-        <div className="pt-24 text-center">Checking subscription…</div>
-      );
+      return <div className="pt-24 text-center">Checking subscription…</div>;
     if (!user) return <Navigate to="/" replace />;
 
     if (
@@ -167,6 +173,7 @@ function AppWrapper() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<HomePage />} />
+        <Route path="/dailyquiz" element={<DailyQuiz />} /> {/* ✅ New Route */}
         <Route path="/profile" element={<Profile />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/library" element={<Library />} />
@@ -176,7 +183,7 @@ function AppWrapper() {
         <Route path="/resources/newspapers" element={<Newspapers />} />
         <Route path="/tests" element={<Tests />} />
         <Route path="/study-rooms" element={<StudyRoom />} />
-        <Route path="/current-affairs" element={<CurrentAffairs />} /> {/* ✅ New route */}
+        <Route path="/current-affairs" element={<CurrentAffairs />} />
 
         {/* Protected */}
         <Route
@@ -208,6 +215,16 @@ function AppWrapper() {
           element={
             <ProtectedTopicTests>
               <TestRunner />
+            </ProtectedTopicTests>
+          }
+        />
+
+        {/* ✅ Mains Tab Page */}
+        <Route
+          path="/mains-tab"
+          element={
+            <ProtectedTopicTests>
+              <MainsTab />
             </ProtectedTopicTests>
           }
         />

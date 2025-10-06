@@ -28,16 +28,19 @@ export default function TestRunner() {
   const [violationReason, setViolationReason] = useState("");
   const [tabWarnings, setTabWarnings] = useState(0);
 
-  // total time
+  // total time = 30 sec per question
   const totalSeconds = useMemo(() => {
     const n = testDoc?.questions?.length || 0;
     return n * 30;
   }, [testDoc]);
 
-  // Fetch test
+  // --- Fetch test & normalize JSON ---
   useEffect(() => {
-    const fetchTest = async () => {
+    let mounted = true;
+    (async () => {
       try {
+        console.log("🔥 Params from URL:", { examType, subject, subtopic, testId });
+
         const ref = doc(
           db,
           "tests",
@@ -49,46 +52,104 @@ export default function TestRunner() {
           "tests",
           testId
         );
-        const snap = await getDoc(ref);
 
+        console.log("📂 Firestore ref path:", ref.path);
+
+        const snap = await getDoc(ref);
         if (!snap.exists()) {
+          console.error("❌ No document found at:", ref.path);
           alert("❌ Test not found.");
           navigate("/");
           return;
         }
 
-        const data = snap.data();
-        if (!Array.isArray(data.questions) || data.questions.length === 0) {
+        const raw = snap.data();
+        console.log("✅ Raw Firestore data:", raw);
+
+        // Normalize JSON shape
+        let questions = [];
+        if (Array.isArray(raw?.questions)) questions = raw.questions;
+        else if (Array.isArray(raw?.data)) questions = raw.data;
+        else if (Array.isArray(raw)) questions = raw;
+        else questions = [];
+
+        console.log("📊 Extracted questions:", questions);
+
+        questions = questions
+          .filter((q) => q && q.question && Array.isArray(q.options) && q.options.length > 0)
+          .map((q, i) => ({
+            id: q.id || `q${i}`,
+            question: q.question,
+            options: q.options,
+            correctIndex: typeof q.correctIndex === "number" ? q.correctIndex : null,
+            answer: q.answer ?? null,
+            explanation: q.explanation ?? "",
+          }));
+
+        if (!questions.length) {
+          console.warn("⚠️ No valid questions extracted:", raw);
           alert("❌ This test has no questions.");
           navigate("/");
           return;
         }
 
-        setTestDoc({ id: snap.id, ...data });
-        setSecondsLeft(data.questions.length * 30);
+        if (!mounted) return;
 
-        const user = auth.currentUser;
-        if (user) {
-          const attemptRef = doc(db, "attempts", `${testId}_${user.uid}`);
-          const attemptSnap = await getDoc(attemptRef);
-          if (attemptSnap.exists()) {
-            alert("⚠️ You have already attempted this test.");
-            navigate("/");
-          }
-        }
+        const norm = {
+          id: snap.id,
+          title: raw.title || "Prelims Test",
+          questions,
+        };
+        setTestDoc(norm);
+        setSecondsLeft(questions.length * 30);
+
+        // prevent reattempt
+       // prevent reattempt with safety
+const user = auth.currentUser;
+if (user) {
+  try {
+    const attemptRef = doc(
+      db,
+      "attempts",
+      `${examType}_${subject}_${subtopic}_${testId}_${user.uid}`
+    );
+    const attemptSnap = await getDoc(attemptRef);
+
+    if (attemptSnap.exists()) {
+      alert("⚠️ You have already attempted this test.");
+      navigate("/");
+      return;
+    }
+  } catch (err) {
+    console.warn("⚠️ Attempt check failed, ignoring:", err.message);
+    // Agar permission issue ya koi aur error ho, test fir bhi allow hoga
+  }
+}
+
+      } catch (e) {
+        console.error("🚨 Fetch failed:", e);
+        alert("Failed to load test.");
+        navigate("/");
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
+    })();
+    return () => {
+      mounted = false;
     };
-    fetchTest();
   }, [examType, subject, subtopic, testId, navigate]);
 
-  // Start test
+  // --- Start test (fullscreen + camera/mic) ---
   const startTest = async () => {
     setMediaError("");
+
     try {
       if (containerRef.current?.requestFullscreen) {
         await containerRef.current.requestFullscreen();
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Media devices not available");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -119,7 +180,7 @@ export default function TestRunner() {
     }
   };
 
-  // Cleanup
+  // --- Cleanup ---
   useEffect(() => {
     return () => {
       mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop());
@@ -129,7 +190,7 @@ export default function TestRunner() {
     };
   }, []);
 
-  // Timer
+  // --- Timer ---
   useEffect(() => {
     if (!started || secondsLeft <= 0) return;
     const t = setInterval(() => {
@@ -144,7 +205,7 @@ export default function TestRunner() {
     }
   }, [started, secondsLeft]);
 
-  // Detect fullscreen exit
+  // --- Fullscreen exit detection ---
   useEffect(() => {
     if (!started) return;
     const onFsChange = () => {
@@ -156,22 +217,26 @@ export default function TestRunner() {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, [started]);
 
-  // Detect tab switch
+  // --- Tab switch detection ---
   useEffect(() => {
     if (!started) return;
 
     const triggerTabViolation = () => {
-      if (tabWarnings === 0) {
-        setTabWarnings(1);
-        setViolationReason("tab-warning");
-      } else if (tabWarnings === 1) {
-        setTabWarnings(2);
-        setViolationReason("unfair-means");
-        setTimeout(() => {
-          handleSubmit("unfair-means");
-          navigate("/");
-        }, 5000);
-      }
+      setTabWarnings((prev) => {
+        if (prev === 0) {
+          setViolationReason("tab-warning");
+          return 1;
+        }
+        if (prev === 1) {
+          setViolationReason("unfair-means");
+          setTimeout(() => {
+            handleSubmit("unfair-means");
+            navigate("/");
+          }, 5000);
+          return 2;
+        }
+        return prev;
+      });
     };
 
     const onBlur = triggerTabViolation;
@@ -185,9 +250,10 @@ export default function TestRunner() {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [started, tabWarnings, navigate]);
+  }, [started, navigate]);
 
   if (loading) return <div className="pt-24 text-center">Loading test…</div>;
+  if (!testDoc) return null;
 
   const q = testDoc.questions[current];
   const n = testDoc.questions.length;
@@ -201,7 +267,7 @@ export default function TestRunner() {
       .toString()
       .padStart(2, "0")}`;
 
-  // Evaluate test
+  // --- Evaluate ---
   const computeScore = () => {
     let correct = 0;
     let wrong = 0;
@@ -225,13 +291,14 @@ export default function TestRunner() {
         answer: ques.answer ?? null,
         chosenIndex: chosen ?? null,
         isCorrect: chosen != null ? isCorrect : null,
+        explanation: ques.explanation ?? "",
       };
     });
     const marks = correct * 3 - wrong * 1;
     return { correct, wrong, total: n, marks, detail };
   };
 
-  // Submit test
+  // --- Submit ---
   const handleSubmit = async (why = "submit") => {
     const res = computeScore();
     setResult(res);
@@ -239,7 +306,7 @@ export default function TestRunner() {
 
     try {
       const user = auth.currentUser;
-      const attemptId = `${testId}_${user?.uid || "anon"}`;
+      const attemptId = `${examType}_${subject}_${subtopic}_${testId}_${user?.uid || "anon"}`;
       await setDoc(doc(db, "attempts", attemptId), {
         userId: user?.uid || "anon",
         examType,
@@ -263,17 +330,13 @@ export default function TestRunner() {
     }
   };
 
-  // Pie chart
+  // --- Simple pie ---
   const Pie = ({ correct, wrong, total }) => {
-    const bg = `conic-gradient(#22c55e 0 ${(
-      (correct / total) *
-      360
-    ).toFixed()}deg,
-    #ef4444 ${(correct / total) * 360}deg ${(
-      ((correct + wrong) / total) *
-      360
-    ).toFixed()}deg,
-    #9ca3af ${(((correct + wrong) / total) * 360).toFixed()}deg 360deg)`;
+    const done = correct + wrong;
+    const green = ((correct / total) * 360).toFixed(0);
+    const redStart = green;
+    const redEnd = (((done) / total) * 360).toFixed(0);
+    const bg = `conic-gradient(#22c55e 0 ${green}deg, #ef4444 ${redStart}deg ${redEnd}deg, #9ca3af ${redEnd}deg 360deg)`;
     return <div className="w-36 h-36 rounded-full" style={{ background: bg }} />;
   };
 
@@ -285,11 +348,9 @@ export default function TestRunner() {
       {/* Start screen */}
       {!started && (
         <div className="max-w-4xl mx-auto bg-gray-800/70 p-6 rounded-2xl">
-          <h1 className="text-2xl font-bold mb-2">
-            {testDoc?.title || "Prelims Test"}
-          </h1>
+          <h1 className="text-2xl font-bold mb-2">{testDoc.title}</h1>
           <p className="text-gray-300 mb-4">
-            The test will start in fullscreen with camera & microphone enabled.
+            The test will open in fullscreen with camera & microphone enabled.
           </p>
           <video
             ref={videoRefStart}
@@ -311,12 +372,15 @@ export default function TestRunner() {
       {started && (
         <>
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[220px_1fr_220px] gap-6">
-            {/* Question nav */}
+            {/* Navigator */}
             <div className="bg-gray-800 p-4 rounded-xl">
-              <p className="mb-2 text-sm">Questions</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm">Questions</p>
+                <span className="text-sm">⏱ {formatMMSS(secondsLeft)}</span>
+              </div>
               <div className="grid grid-cols-5 gap-2">
-                {testDoc.questions.map((_, i) => {
-                  const key = _.id || `q${i}`;
+                {testDoc.questions.map((qq, i) => {
+                  const key = qq.id || `q${i}`;
                   const chosen = answers[key];
                   return (
                     <button
@@ -329,6 +393,7 @@ export default function TestRunner() {
                           ? "bg-green-600/70"
                           : "bg-gray-700"
                       }`}
+                      title={`Q${i + 1}`}
                     >
                       {i + 1}
                     </button>
@@ -337,11 +402,10 @@ export default function TestRunner() {
               </div>
             </div>
 
-            {/* Question content */}
+            {/* Question */}
             <div className="bg-gray-800 p-6 rounded-xl">
               <div className="flex justify-between mb-4">
-                <h2>Q{current + 1}</h2>
-                <span>⏱ {formatMMSS(secondsLeft)}</span>
+                <h2 className="font-semibold">Q{current + 1}</h2>
               </div>
               <p className="mb-4">{q.question}</p>
               <div className="space-y-2">
@@ -367,10 +431,33 @@ export default function TestRunner() {
                   );
                 })}
               </div>
+
+              <div className="flex justify-between mt-6">
+                <button
+                  disabled={current === 0}
+                  onClick={() => setCurrent((c) => Math.max(c - 1, 0))}
+                  className="px-4 py-2 rounded bg-gray-700 disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <button
+                  disabled={current === n - 1}
+                  onClick={() => setCurrent((c) => Math.min(c + 1, n - 1))}
+                  className="px-4 py-2 rounded bg-gray-700 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
 
             {/* Controls */}
             <div className="bg-gray-800 p-4 rounded-xl">
+              <div className="mb-4">
+                Answered:{" "}
+                <b>
+                  {Object.keys(answers).length}/{n}
+                </b>
+              </div>
               <button
                 onClick={() => handleSubmit("submit")}
                 className="w-full py-2 rounded bg-purple-600 hover:bg-purple-700"
@@ -393,17 +480,99 @@ export default function TestRunner() {
         </>
       )}
 
-      {/* Results popup */}
-      <AnimatePresence>
-        {showResults && result && (
-          <motion.div className="fixed inset-0 bg-black/60 flex items-center justify-center">
-            <motion.div className="bg-gray-900 p-6 rounded-2xl w-full max-w-4xl">
-              <h3 className="text-2xl font-bold mb-4">Your Results</h3>
-              <Pie correct={result.correct} wrong={result.wrong} total={result.total} />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Results */}
+     {/* Results */}
+<AnimatePresence>
+  {showResults && result && (
+    <motion.div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="bg-gray-900 p-6 rounded-2xl w-full max-w-4xl overflow-y-auto max-h-[90vh]"
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+      >
+        <h3 className="text-2xl font-bold mb-4">Your Results</h3>
+
+        {/* Summary Section */}
+        <div className="flex items-center gap-6 mb-6">
+          <Pie correct={result.correct} wrong={result.wrong} total={result.total} />
+          <div className="space-y-1">
+            <div>Total Questions: <b>{result.total}</b></div>
+            <div>Correct: <b className="text-green-400">{result.correct}</b></div>
+            <div>Wrong: <b className="text-red-400">{result.wrong}</b></div>
+            <div>Marks (3/-1): <b className="text-cyan-400">{result.marks}</b></div>
+
+            {/* 🔥 Feedback line */}
+            <div className="mt-3 text-lg font-semibold text-yellow-300">
+              {(() => {
+                const percent = (result.correct / result.total) * 100;
+                if (percent < 20) return "Keep practicing, you need to strengthen your basics.";
+                if (percent < 50) return "Good attempt, but you need more revision.";
+                if (percent < 75) return "Well done! You’re on the right track.";
+                return "Excellent! You’re exam-ready.";
+              })()}
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Questions */}
+        <div className="max-h-[50vh] overflow-auto rounded border border-gray-700 mt-6">
+          {result.detail.map((d) => (
+            <div key={d.index} className="p-4 border-b border-gray-800">
+              <div className="mb-2 font-semibold">Q{d.index}. {d.question}</div>
+              <div className="grid md:grid-cols-2 gap-2">
+                {d.options.map((opt, i) => {
+                  const isCorrect = i === d.correctIndex || (d.answer && opt === d.answer);
+                  const isChosen = i === d.chosenIndex;
+                  return (
+                    <div
+                      key={i}
+                      className={[
+                        "px-3 py-2 rounded border",
+                        isCorrect
+                          ? "border-green-500 bg-green-500/10"
+                          : isChosen
+                          ? "border-red-500 bg-red-500/10"
+                          : "border-gray-700 bg-gray-800",
+                      ].join(" ")}
+                    >
+                      {opt}
+                    </div>
+                  );
+                })}
+              </div>
+              {d.explanation && (
+                <div className="mt-2 text-sm text-gray-300">
+                  <b>Explanation: </b>{d.explanation}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Close Button */}
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={() => {
+              setShowResults(false);
+              navigate("/topic-tests"); // 👈 yahan apne TopicTest.js ka route daalo
+            }}
+            className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700"
+          >
+            Go to Tests Dashboard
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
+
 
       {/* Violation popup */}
       <AnimatePresence>

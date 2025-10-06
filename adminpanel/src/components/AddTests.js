@@ -131,7 +131,6 @@ export default function AddTests() {
         >
           <option value="prelims">Prelims</option>
           <option value="csat">CSAT</option>
-          <option value="mains">Mains</option>
         </select>
 
         {/* Subject Dropdown */}
