@@ -2,11 +2,12 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { doc, setDoc } from "firebase/firestore";
-import { db } from "../firebase";
-import { FaCheckCircle } from "react-icons/fa";
-
-export default function UserInfoPopup({ user, isOpen, onClose }) {
+import { FaCheckCircle , FaTimes} from "react-icons/fa";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth, db } from "../firebase";
+export default function UserInfoPopup({ user, isOpen, onCloseUserInfo,  setIsAuthModal }) {
   const [firstName, setFirstName] = useState("");
+  const [email, setEmail] = useState("");
   const [lastName, setLastName] = useState("");
   const [gender, setGender] = useState("Male");
   const [phone, setPhone] = useState("");
@@ -14,33 +15,111 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
   const [agree, setAgree] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showSavedPopup, setShowSavedPopup] = useState(false);
+  const [pswrd, setPassword] = useState("");
 
-  if (!isOpen || !user) return null;
+  console.log(isOpen, "useInfo");
+  
+  // if (!isOpen || !user) return null;
 
+  const disableSubmit = () => {
+    return firstName &&
+      lastName &&
+      pswrd &&
+      gender &&
+      phone &&
+      address &&
+      agree
+  }
+  
+  // console.log(setIsAuthModal , "disableSubmit values");
+  
   const handleSubmit = async () => {
-    if (!firstName || !lastName || !gender || !phone || !address || !agree) {
-      alert("Please fill all fields and agree to Terms & Conditions.");
-      return;
-    }
     try {
       setSaving(true);
-      await setDoc(
-        doc(db, "users", user.uid),
-        { firstName, lastName, gender, phone, address },
-        { merge: true }
-      );
+        const res = await createUserWithEmailAndPassword(auth, email, pswrd);
+        console.log("Firebase User:", res.user);
+  
+        await setDoc(doc(db, "users", res.user.uid), {
+          displayName: firstName,
+          email: email,
+          address: address,
+          phoneNumber:phone,
+          isVerified: false,
+          createdAt: new Date().toISOString(),
+        });
+  
+        await updateProfile(res.user, {
+          displayName: firstName,
+          phoneNumber: phone,
+
+        });
+      
+        const currentUser = auth.currentUser;
+        console.log("Current logged in user:", currentUser);
+  
+        // if (user?.setUser) {
+        //   user.setUser({
+        //     uid: res.user.uid,
+        //     email: res.user.email,
+        //     name: firstName,
+        //     photoURL: res.user.photoURL || null,
+        //   });
+        // }
       setShowSavedPopup(true);
+      setIsAuthModal(false);
+        // setShowInfoPopup(true);
+  
+      // } else {
+      //   // Sign In case
+      //   const res = await signInWithEmailAndPassword(auth, email, password);
+      //   console.log("User logged in:", res.user);
+  
+      //   if (userData?.setUser) {
+      //     userData.setUser({
+      //       uid: res.user.uid,
+      //       email: res.user.email,
+      //       name: res.user.displayName || "",
+      //       photoURL: res.user.photoURL || null,
+      //     });
+      //   }
+      // }
+      // setSaving(false);
       setTimeout(() => {
         setShowSavedPopup(false);
-        onClose();
-      }, 2000); // auto close after 2s
+        setIsAuthModal(false);
+        onCloseUserInfo();
+      }, 2000); // 
     } catch (err) {
-      console.error("Error saving user info:", err);
-      alert("Something went wrong. Please try again.");
+      console.error(err);
+      alert(err?.message || "Authentication failed.");
     } finally {
       setSaving(false);
     }
   };
+  // const handleSubmit = async () => {
+    // if (!firstName || !lastName || !gender || !phone || !address || !agree) {
+    //   alert("Please fill all fields and agree to Terms & Conditions.");
+    //   return;
+    // }
+  //   try {
+  //     setSaving(true);
+  //     await setDoc(
+  //       doc(db, "users", user.uid),
+  //       { firstName, lastName, gender, phone, address },
+  //       { merge: true }
+  //     );
+  //     setShowSavedPopup(true);
+      // setTimeout(() => {
+      //   setShowSavedPopup(false);
+      //   onCloseUserInfo();
+      // }, 2000); // auto close after 2s
+  //   } catch (err) {
+  //     console.error("Error saving user info:", err);
+  //     alert("Something went wrong. Please try again.");
+  //   } finally {
+  //     setSaving(false);
+  //   }
+  // };
 
   return (
     <AnimatePresence>
@@ -60,6 +139,12 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
             transition={{ duration: 0.35, ease: "easeOut" }}
             className="relative w-[90%] max-w-md rounded-2xl bg-white dark:bg-gray-800 shadow-2xl p-8 text-center"
           >
+              <button
+            onClick={onCloseUserInfo}
+            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            <FaTimes size={20} />
+          </button>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
               Welcome to <span className="text-[#0090DE]">Satyapath</span> 🚀
             </h2>
@@ -68,6 +153,13 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
             </p>
 
             <div className="mt-6 space-y-4 text-left">
+            <input
+                type="text"
+                placeholder="Email"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
               <input
                 type="text"
                 placeholder="First Name"
@@ -97,6 +189,13 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
+               <input
+                type="Password"
+                placeholder="Enter your password"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0090DE] outline-none"
+                value={pswrd}
+                onChange={(e) => setPassword(e.target.value)}
+              />
               <textarea
                 placeholder="Enter your address"
                 rows="3"
@@ -119,7 +218,7 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
 
             <button
               onClick={handleSubmit}
-              disabled={saving}
+              disabled={!disableSubmit()}
               className={`mt-6 w-full py-2 rounded-lg font-semibold transition ${
                 saving
                   ? "bg-[#0090DE]/70 text-white cursor-wait"
@@ -166,3 +265,4 @@ export default function UserInfoPopup({ user, isOpen, onClose }) {
     </AnimatePresence>
   );
 }
+

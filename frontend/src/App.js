@@ -145,20 +145,21 @@ function AppWrapper() {
       <div className="flex justify-center items-center h-screen">Loading…</div>
     );
   }
+// console.log(user && userDoc && userDoc.isVerified === false, "user && userDoc && userDoc.isVerified === false");
 
-  if (user && userDoc && userDoc.isVerified === false) {
-    return (
-      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-        <AuthModal isOpen={true} onClose={() => {}} />
-      </div>
-    );
-  }
+  // if (user && userDoc && userDoc.isVerified === false) {
+  //   return (
+  //     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+  //       <AuthModal isOpen={true} onClose={() => {}} />
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <Navbar
-        onLoginClick={() => setIsAuthOpen(true)}
-        onSubscriptionClick={() => setIsSubscriptionOpen(true)}
+        // onLoginClick={() => setIsAuthOpen(true)}
+        // onSubscriptionClick={() => setIsSubscriptionOpen(true)}
       />
 
       <Routes>
@@ -215,16 +216,16 @@ function AppWrapper() {
       )}
 
       {/* Global Modals */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      {/* <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} /> */}
       <SubscriptionPopup
         isOpen={isSubscriptionOpen}
         onClose={() => setIsSubscriptionOpen(false)}
       />
-      <UserInfoPopup
+      {/* <UserInfoPopup
         user={user}
         isOpen={showInfoPopup}
         onClose={() => setShowInfoPopup(false)}
-      />
+      /> */}
       <ContactUsModal
         open={isContactOpen}
         onClose={() => setIsContactOpen(false)}

@@ -10,43 +10,52 @@ import {
 import {
   doc,
   setDoc,
-  updateDoc, // ✅ used to immediately flip isVerified in Firestore after OTP success
+  updateDoc,
+  getDoc// ✅ used to immediately flip isVerified in Firestore after OTP success
 } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaGoogle, FaTwitter, FaApple } from "react-icons/fa";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import UserInfoPopup from "./UserInfoPopup";
 
-function AuthModal({ isOpen, onClose }) {
-  // ---------------- UI state ----------------
+function AuthModal({ isOpen, onClose, userData }) {
   const [isRegister, setIsRegister] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  // const [password, setPassword] = useState('');
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [authLoading, setAuthLoading] = useState(false);
+  const [showInfoPopup, setShowInfoPopup] = useState(false);
 
-  // ---------------- Auth state ----------------
   const [user, setUser] = useState(null);
 
-  // ---------------- OTP state ----------------
   const [showOtpPopup, setShowOtpPopup] = useState(false);
   const [otpDigits, setOtpDigits] = useState(["", "", "", "", "", ""]);
   const [otpError, setOtpError] = useState("");
   const [loadingOtp, setLoadingOtp] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+  const [isAuthModal, setIsAuthModal] = useState(false);
 
-  // refs for 6 inputs & mount focusing
   const otpRefs = useRef([]);
   const firstOtpMountRef = useRef(false);
 
-  // Firebase Functions
   const functions = getFunctions();
 
+  console.log(onClose, isOpen, "vsdhgf");
+
   // ---------------- Effects ----------------
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u || null);
-    });
-    return () => unsub();
-  }, []);
+
+  // useEffect(() => {
+  //   const unsub = onAuthStateChanged(auth, (u) => {
+  //     console.log("user bcjc", u);
+
+  //     setUser(u || null);
+  //   });
+  //   return () => unsub();
+  // }, []);
 
   // countdown for resend button
   useEffect(() => {
@@ -68,7 +77,6 @@ function AuthModal({ isOpen, onClose }) {
     }
   }, [showOtpPopup]);
 
-  // allow Enter key to submit OTP quickly
   useEffect(() => {
     if (!showOtpPopup) return;
     const handler = (e) => {
@@ -76,20 +84,21 @@ function AuthModal({ isOpen, onClose }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [showOtpPopup, otpDigits]); // eslint-disable-line
+  }, [showOtpPopup, otpDigits]); 
 
-  // ---------------- Handlers ----------------
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
+  console.log(form, "form cfk");
 
   const triggerClose = () => {
-    // do not allow closing while OTP verification stage is visible
     if (showOtpPopup) return;
     setClosing(true);
+    onClose();
     setTimeout(() => {
+      // console.log("onclose bbfjfjhfd", onClose);
       setClosing(false);
-      onClose();
-    }, 800);
+      // onClose();
+    }, 500);
   };
 
   const handleSubmit = async () => {
@@ -98,36 +107,41 @@ function AuthModal({ isOpen, onClose }) {
       if (isRegister) {
         const res = await createUserWithEmailAndPassword(
           auth,
-          form.email,
-          form.password
+          email,
+          password
         );
+        console.log(res, 'response for register');
 
         // create base user doc
         await setDoc(doc(db, "users", res.user.uid), {
-          name: form.name,
-          email: form.email,
-          isVerified: false, // 🔒 force OTP verification
+          name: name,
+          email: email,
+          isVerified: false,
           createdAt: new Date().toISOString(),
         });
 
-        // request OTP from Cloud Function
         const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
         await reqOtp({ uid: res.user.uid });
 
-        // show OTP popup
         setShowOtpPopup(true);
         setResendTimer(60);
       } else {
-        // normal login
         const res = await signInWithEmailAndPassword(
           auth,
-          form.email,
-          form.password
+          email,
+          password
         );
-
-        // send login email (backend checks first/verified login)
+        console.log(res, 'response for register');
         const sendLogin = httpsCallable(functions, "sendLoginEmailV1");
         await sendLogin({ uid: res.user.uid });
+        if (userData?.setUser) {
+          userData.setUser({
+            uid: user.uid,
+            email: user.email,
+            name: user.displayName || "",
+            photoURL: user.photoURL || null,
+          });
+        }
 
         triggerClose();
       }
@@ -143,32 +157,124 @@ function AuthModal({ isOpen, onClose }) {
     try {
       setAuthLoading(true);
       const res = await signInWithPopup(auth, googleProvider);
-
-      // ensure user doc exists (or merge updates)
-      await setDoc(
-        doc(db, "users", res.user.uid),
-        {
+      const uid = res.user.uid;
+  
+      const userRef = doc(db, "users", uid);
+      const snap = await getDoc(userRef);
+  
+      if (snap.exists() && snap.data()?.isVerified) {
+        const docData = snap.data();
+        userData?.setUser({
+          uid,
           email: res.user.email,
-          name: res.user.displayName || "",
-          photoURL: res.user.photoURL || null,
-          isVerified: false, // 🔒 requires OTP on first time
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-      // request OTP & show popup
-      const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
-      await reqOtp({ uid: res.user.uid });
-      setShowOtpPopup(true);
-      setResendTimer(60);
+          name: docData.name || res.user.displayName || "",
+          photoURL: docData.photoURL || res.user.photoURL || null,
+        });
+        onClose();
+      } else {
+        // Not verified (new or existing but unverified) → create/update and request OTP
+        await setDoc(
+          userRef,
+          {
+            email: res.user.email,
+            name: res.user.displayName || "",
+            phoneNumber: res.user.phoneNumber || '',
+            photoURL: res.user.photoURL || null,
+            isVerified: false,
+            createdAt: snap.exists() ? snap.data().createdAt : new Date().toISOString(),
+          },
+          { merge: true }
+        );
+  
+        const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
+        await reqOtp({ uid });
+        setShowOtpPopup(true);
+        setResendTimer(60);
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Google login error:", err);
       alert(err?.message || "Google sign-in failed.");
     } finally {
       setAuthLoading(false);
     }
   };
+
+  
+  // const handleGoogleLogin = async () => {
+  //   try {
+  //     setAuthLoading(true);
+
+  //     const res = await signInWithPopup(auth, googleProvider);
+
+  //     const userRef = doc(db, "users", res.user.uid);
+  //     const userSnap = await getDoc(userRef);
+
+  //     if (userSnap.exists()) {
+  //       await updateDoc(userRef, {
+  //         email: res.user.email,
+  //         name: res.user.displayName || "",
+  //         photoURL: res.user.photoURL || null,
+  //       }, { merge: true });
+  //     } else {
+  //       await setDoc(userRef, {
+  //         email: res.user.email,
+  //         name: res.user.displayName || "",
+  //         phoneNumber: res.user.phoneNumber || '',
+  //         photoURL: res.user.photoURL || null,
+  //         isVerified: false, // 🔒 requires OTP on first time
+  //         createdAt: new Date().toISOString(),
+  //       }, { merge: true });
+  //     }
+
+  //     const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
+  //     console.log(reqOtp, "reqOtp djndjknjs");
+  //     await reqOtp({ uid: res.user.uid });
+
+  //     setShowOtpPopup(true);
+  //     setResendTimer(60);
+
+  //   } catch (err) {
+  //     console.error("Google login error:", err);
+  //     alert(err?.message || "Google sign-in failed.");
+  //   } finally {
+  //     setAuthLoading(false);
+  //   }
+  // };
+  // const handleGoogleLogin = async () => {
+  //   try {
+  //     setAuthLoading(true);
+  //     const res = await signInWithPopup(auth, googleProvider);
+  //     console.log("response from handlegoogle login", res);
+
+  //     // ensure user doc exists (or merge updates)
+
+
+  //     await setDoc(
+  //       doc(db, "users", res.user.uid),
+  //       {
+  //         email: res.user.email,
+  //         name: res.user.displayName || "",
+  //         photoURL: res.user.photoURL || null,
+  //         isVerified: false, // 🔒 requires OTP on first time
+  //         createdAt: new Date().toISOString(),
+  //       },
+  //       { merge: true }
+  //     );
+
+  //     // request OTP & show popup
+  //     const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
+  //     console.log(reqOtp, "see here for reqOtp");
+
+  //     await reqOtp({ uid: res.user.uid });
+  //     setShowOtpPopup(true);
+  //     setResendTimer(60);
+  //   } catch (err) {
+  //     console.error(err);
+  //     alert(err?.message || "Google sign-in failed.");
+  //   } finally {
+  //     setAuthLoading(false);
+  //   }
+  // };
 
   const handleOtpChange = (val, idx) => {
     if (!/^\d?$/.test(val)) return;
@@ -202,27 +308,34 @@ function AuthModal({ isOpen, onClose }) {
       setLoadingOtp(true);
       setOtpError("");
       const code = otpDigits.join("");
+
       if (code.length !== 6) {
         setOtpError("Please enter all 6 digits.");
         setLoadingOtp(false);
         return;
       }
 
-      // 1) verify OTP in backend
       const verifyOtp = httpsCallable(functions, "verifySignupOtpV1");
       await verifyOtp({ uid: user.uid, code });
 
-      // 2) 🔑 Immediately mark verified locally in Firestore
       await updateDoc(doc(db, "users", user.uid), { isVerified: true });
 
-      // 3) send account-created (if first) + login-success email
       const sendLogin = httpsCallable(functions, "sendLoginEmailV1");
       await sendLogin({ uid: user.uid });
 
-      // 4) close OTP + modal
+      console.log(isAuthModal, "authClose hit here");
+      
       setShowOtpPopup(false);
+      onClose();
       setOtpDigits(["", "", "", "", "", ""]);
-      triggerClose();
+      if (userData?.setUser) {
+        userData.setUser({
+          uid: user.uid,
+          email: user.email,
+          name: user.displayName || "",
+          photoURL: user.photoURL || null,
+        });
+      }
     } catch (err) {
       console.error(err);
       setOtpError(err?.message || "OTP verification failed.");
@@ -244,208 +357,233 @@ function AuthModal({ isOpen, onClose }) {
     }
   };
 
-  // particles for the disintegration animation
   const particles = Array.from({ length: 120 });
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    console.log("!open");
 
-  // ---------------- Render ----------------
+    return null;
+  }
+
+ 
+
+  console.log(showInfoPopup, "showInfoPopupshowInfoPopup");
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          // ⛔ Do NOT close when clicking backdrop if OTP popup is active
-          onClick={() => {
-            if (!showOtpPopup) triggerClose();
-          }}
-        >
+    <>
+      <AnimatePresence>
+        {isOpen && (
           <motion.div
-            initial={{ opacity: 1, scale: 1 }}
-            animate={{ opacity: 1, scale: 1 }}
+            className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-96"
+            onClick={() => {
+              if (!showOtpPopup) triggerClose();
+            }}
           >
-            {/* Dust Particles */}
-            {closing &&
-              particles.map((_, i) => (
-                <motion.span
-                  key={i}
-                  className="absolute w-1 h-1 bg-white dark:bg-gray-700 rounded"
-                  style={{
-                    top: `${Math.random() * 100}%`,
-                    left: `${Math.random() * 100}%`,
-                  }}
-                  initial={{ opacity: 1 }}
-                  animate={{
-                    x: Math.random() * 400,
-                    y: (Math.random() - 0.5) * 200,
-                    opacity: 0,
-                    scale: 0,
-                  }}
-                  transition={{ duration: 1.5, ease: "easeOut" }}
-                />
-              ))}
-
-            {/* Modal Content */}
-            <div
-              className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 relative z-10 ${
-                closing ? "animate-disintegrate" : ""
-              }`}
+            <motion.div
+              initial={{ opacity: 1, scale: 1 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-96"
             >
-              <h2 className="text-xl font-bold mb-4">
-                {isRegister ? "Register" : "Sign In"}
-              </h2>
+              {/* Dust Particles */}
+              {closing &&
+                particles.map((_, i) => (
+                  <motion.span
+                    key={i}
+                    className="absolute w-1 h-1 bg-white dark:bg-gray-700 rounded"
+                    style={{
+                      top: `${Math.random() * 100}%`,
+                      left: `${Math.random() * 100}%`,
+                    }}
+                    initial={{ opacity: 1 }}
+                    animate={{
+                      x: Math.random() * 400,
+                      y: (Math.random() - 0.5) * 200,
+                      opacity: 0,
+                      scale: 0,
+                    }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                  />
+                ))}
 
-              {isRegister && (
+              {/* Modal Content */}
+              <div
+                className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 relative z-10 ${closing ? "animate-disintegrate" : ""
+                  }`}
+              >
+                <h2 className="text-xl font-bold mb-4">
+                  {isRegister ? "Register" : "Sign In"}
+                </h2>
+
+                {/* {isRegister && (
                 <input
                   type="text"
                   name="name"
                   placeholder="Name"
                   className="border p-2 w-full mb-2 rounded"
-                  onChange={handleChange}
+                  onChange={(val) => setName(val)}
                 />
+              )} */}
+
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  className="border p-2 w-full mb-2 rounded"
+                  onChange={(val) => setEmail(val)}
+                />
+
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Password"
+                  className="border p-2 w-full mb-4 rounded"
+                  onChange={(val) => setPassword(val)}
+                />
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={authLoading}
+                  className="w-full bg-purple-600 text-white p-2 rounded mb-3 disabled:opacity-50"
+                >
+                  {authLoading
+                    ? isRegister
+                      ? "Creating account…"
+                      : "Signing in…"
+                    : isRegister
+                      ? "Register"
+                      : "Sign In"}
+                </button>
+
+                {/* Social Logins */}
+                <div className="flex justify-center gap-6 mb-4">
+                  <button
+                    onClick={handleGoogleLogin}
+                    disabled={authLoading}
+                    className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
+                  >
+                    <FaGoogle className="text-red-500 text-xl" />
+                  </button>
+                  <button
+                    onClick={() => alert("Twitter login coming soon!")}
+                    className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
+                  >
+                    <FaTwitter className="text-sky-500 text-xl" />
+                  </button>
+                  <button
+                    onClick={() => alert("Apple login coming soon!")}
+                    className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
+                  >
+                    <FaApple className="text-black dark:text-white text-xl" />
+                  </button>
+                </div>
+                <p
+                  className="text-blue-600 cursor-pointer text-sm text-center"
+                  onClick={() => {
+                   
+                    setIsRegister(true);
+                    setShowInfoPopup(true);
+                    setIsAuthModal(false);
+                    
+                  }}
+                >
+                  {isRegister
+                    ? "Already have an account? Sign In"
+                    : "Don’t have an account? →  Register"}
+                </p>
+
+              </div>
+            </motion.div>
+
+
+
+            {/* OTP POPUP */}
+            <AnimatePresence>
+              {showOtpPopup && (
+                <motion.div
+                  className="fixed inset-0 flex items-center justify-center bg-black/60 z-[200]"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg text-center w-96"
+                    onPaste={handleOtpPaste}
+                  >
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-3">
+                      Verify Your Email
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                      Enter the 6-digit OTP sent to your email to activate your
+                      account.
+                    </p>
+
+                    {/* OTP Inputs */}
+                    <div className="flex justify-between mb-4">
+                      {otpDigits.map((digit, i) => (
+                        <input
+                          key={i}
+                          ref={(el) => (otpRefs.current[i] = el)}
+                          type="text"
+                          maxLength={1}
+                          value={digit}
+                          inputMode="numeric"
+                          onChange={(e) => handleOtpChange(e.target.value, i)}
+                          className="w-10 h-12 border rounded text-center text-xl font-mono focus:outline-none focus:ring-2 focus:ring-[#0090DE]"
+                        />
+                      ))}
+                    </div>
+
+                    {otpError && (
+                      <p className="text-red-500 text-sm mb-2">{otpError}</p>
+                    )}
+
+                    <button
+                      onClick={handleOtpSubmit}
+                      disabled={loadingOtp}
+                      className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700 transition disabled:opacity-50"
+                    >
+                      {loadingOtp ? "Verifying…" : "Verify OTP"}
+                    </button>
+
+                    <div className="mt-3">
+                      <button
+                        onClick={handleResendOtp}
+                        disabled={resendTimer > 0}
+                        className="text-blue-600 text-sm disabled:opacity-50"
+                      >
+                        {resendTimer > 0
+                          ? `Resend OTP in ${resendTimer}s`
+                          : "Resend OTP"}
+                      </button>
+                    </div>
+                  </motion.div>
+                 
+                </motion.div>
               )}
 
-              <input
-                type="email"
-                name="email"
-                placeholder="Email"
-                className="border p-2 w-full mb-2 rounded"
-                onChange={handleChange}
-              />
-
-              <input
-                type="password"
-                name="password"
-                placeholder="Password"
-                className="border p-2 w-full mb-4 rounded"
-                onChange={handleChange}
-              />
-
-              <button
-                onClick={handleSubmit}
-                disabled={authLoading}
-                className="w-full bg-purple-600 text-white p-2 rounded mb-3 disabled:opacity-50"
-              >
-                {authLoading
-                  ? isRegister
-                    ? "Creating account…"
-                    : "Signing in…"
-                  : isRegister
-                  ? "Register"
-                  : "Sign In"}
-              </button>
-
-              {/* Social Logins */}
-              <div className="flex justify-center gap-6 mb-4">
-                <button
-                  onClick={handleGoogleLogin}
-                  disabled={authLoading}
-                  className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
-                >
-                  <FaGoogle className="text-red-500 text-xl" />
-                </button>
-                <button
-                  onClick={() => alert("Twitter login coming soon!")}
-                  className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
-                >
-                  <FaTwitter className="text-sky-500 text-xl" />
-                </button>
-                <button
-                  onClick={() => alert("Apple login coming soon!")}
-                  className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
-                >
-                  <FaApple className="text-black dark:text-white text-xl" />
-                </button>
-              </div>
-
-              <p
-                className="text-blue-600 cursor-pointer text-sm text-center"
-                onClick={() => setIsRegister((s) => !s)}
-              >
-                {isRegister
-                  ? "Already have an account? Sign In"
-                  : "New user? Register here"}
-              </p>
-            </div>
+            </AnimatePresence>
           </motion.div>
-
-          {/* OTP POPUP */}
-          <AnimatePresence>
-            {showOtpPopup && (
-              <motion.div
-                className="fixed inset-0 flex items-center justify-center bg-black/60 z-[200]"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg text-center w-96"
-                  onPaste={handleOtpPaste}
-                >
-                  <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-3">
-                    Verify Your Email
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                    Enter the 6-digit OTP sent to your email to activate your
-                    account.
-                  </p>
-
-                  {/* OTP Inputs */}
-                  <div className="flex justify-between mb-4">
-                    {otpDigits.map((digit, i) => (
-                      <input
-                        key={i}
-                        ref={(el) => (otpRefs.current[i] = el)}
-                        type="text"
-                        maxLength={1}
-                        value={digit}
-                        inputMode="numeric"
-                        onChange={(e) => handleOtpChange(e.target.value, i)}
-                        className="w-10 h-12 border rounded text-center text-xl font-mono focus:outline-none focus:ring-2 focus:ring-[#0090DE]"
-                      />
-                    ))}
-                  </div>
-
-                  {otpError && (
-                    <p className="text-red-500 text-sm mb-2">{otpError}</p>
-                  )}
-
-                  <button
-                    onClick={handleOtpSubmit}
-                    disabled={loadingOtp}
-                    className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700 transition disabled:opacity-50"
-                  >
-                    {loadingOtp ? "Verifying…" : "Verify OTP"}
-                  </button>
-
-                  <div className="mt-3">
-                    <button
-                      onClick={handleResendOtp}
-                      disabled={resendTimer > 0}
-                      className="text-blue-600 text-sm disabled:opacity-50"
-                    >
-                      {resendTimer > 0
-                        ? `Resend OTP in ${resendTimer}s`
-                        : "Resend OTP"}
-                    </button>
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+     
+{showInfoPopup && (
+  <UserInfoPopup
+    user={userData}
+    isOpen={showInfoPopup}
+    onCloseUserInfo={() => setShowInfoPopup(false)}
+    setIsAuthModal={setIsAuthModal}
+  />
+)}
+    </>
   );
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { auth, db, DEFAULT_AVATAR, storage } from "../firebase";
 import { onAuthStateChanged, signOut, updateProfile } from "firebase/auth";
+import { useNavigate } from "react-router-dom";
 import {
   doc,
   onSnapshot,
@@ -39,78 +40,101 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [showSavedPopup, setShowSavedPopup] = useState(false);
-
+  const [userData, setUserData] = useState(null);
   // Track auth + userDoc
+  const navigate = useNavigate();
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) {
-        const ref = doc(db, "users", u.uid);
-        const unsubDoc = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
-            setUserDoc(snap.data());
-          }
-        });
-        return () => unsubDoc();
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      console.log(user, "user from profile");
+      
+      if (user) {
+        const data = await fetchUserData(user.uid);
+        console.log(data, "data");
+        
+        setUserData(data);
       } else {
-        setUserDoc(null);
+        setUserData(null);
       }
     });
-    return () => unsubAuth();
-  }, []);
+    return () => unsub();
+  }, [])
+
+  async function fetchUserData(uid) {
+    try {
+      const userRef = doc(db, "users", uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        console.log("User Firestore Data:", data);
+        return data;
+      } else {
+        console.log("No such user document!");
+        return null;
+      }
+    } catch (err) {
+      console.error("Error fetching user:", err);
+      return null;
+    }
+  }
+
+  console.log(userData, "UserData from user");
+
+ 
+
 
   // Load today’s usage from Firestore when user logs in
-  useEffect(() => {
-    if (!user) return;
-    const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
+  // useEffect(() => {
+  //   if (!user) return;
+  //   const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
 
-    const fetchAndListen = async () => {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        setDailyTime(snap.data().seconds || 0);
-      } else {
-        setDailyTime(0);
-      }
+  //   const fetchAndListen = async () => {
+  //     const snap = await getDoc(ref);
+  //     if (snap.exists()) {
+  //       setDailyTime(snap.data().seconds || 0);
+  //     } else {
+  //       setDailyTime(0);
+  //     }
 
-      // live listener
-      onSnapshot(ref, (docSnap) => {
-        if (docSnap.exists()) {
-          setDailyTime(docSnap.data().seconds || 0);
-        }
-      });
-    };
+  //     // live listener
+  //     onSnapshot(ref, (docSnap) => {
+  //       if (docSnap.exists()) {
+  //         setDailyTime(docSnap.data().seconds || 0);
+  //       }
+  //     });
+  //   };
 
-    fetchAndListen();
-  }, [user]);
+  //   fetchAndListen();
+  // }, [user]);
 
   // Increment timer every second + save to Firestore
-  useEffect(() => {
-    if (!user) return;
-    const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
+  // useEffect(() => {
+  //   if (!user) return;
+  //   const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
 
-    const interval = setInterval(() => {
-      setDailyTime((prev) => {
-        const updated = prev + 1;
+  //   const interval = setInterval(() => {
+  //     setDailyTime((prev) => {
+  //       const updated = prev + 1;
 
-        setDoc(
-          ref,
-          {
-            uid: user.uid,
-            date: todayKey(),
-            seconds: updated,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+  //       setDoc(
+  //         ref,
+  //         {
+  //           uid: user.uid,
+  //           date: todayKey(),
+  //           seconds: updated,
+  //           updatedAt: serverTimestamp(),
+  //         },
+  //         { merge: true }
+  //       );
 
-        return updated;
-      });
-    }, 1000);
+  //       return updated;
+  //     });
+  //   }, 1000);
 
-    return () => clearInterval(interval);
-  }, [user]);
+  //   return () => clearInterval(interval);
+  // }, [user]);
 
-  if (!user) {
+  if (!userData) {
     return (
       <div className="pt-24 flex justify-center items-center min-h-screen">
         <p className="text-gray-500">Please login to view profile.</p>
@@ -122,44 +146,110 @@ export default function Profile() {
   const planStart = userDoc?.planStart;
   const expiryDate = calcExpiry(planStart, plan);
 
-  // ✅ Always prefer Firestore photoURL first
-  const avatarSrc = userDoc?.photoURL || user?.photoURL || DEFAULT_AVATAR;
+  const avatarSrc = userDoc?.photoURL || userData?.photoURL || DEFAULT_AVATAR;
 
-  // Handle image file selection + upload
+  // const onFileChange = async (e) => {
+  //   if (!userData || !userData.uid) {
+  //     alert("User not loaded yet!");
+  //     return;
+  //   }
+
+  //   const file = e.target.files?.[0];
+  //   if (!file) return;
+  //   if (!file.type.startsWith("image/")) {
+  //     alert("Please select an image file (jpg, png, webp).");
+  //     return;
+  //   }
+
+  //   try {
+  //     setUploading(true);
+  //     setUploadPct(0);
+
+  //     const ext = file.name.split(".").pop() || "jpg";
+  //     const ref = storageRef(storage, `avatars/${userData.uid}.${ext}`);
+
+  //     const task = uploadBytesResumable(ref, file);
+  //     task.on("state_changed", (snap) => {
+  //       const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+  //       setUploadPct(pct);
+  //     });
+
+  //     await task;
+  //     const url = await getDownloadURL(ref);
+
+  //     await updateProfile(userData, { photoURL: url });
+  //     await setDoc(
+  //       doc(db, "users", userData.uid),
+  //       { photoURL: url, updatedAt: serverTimestamp() },
+  //       { merge: true }
+  //     );
+
+  //     setUserDoc((prev) => ({ ...prev, photoURL: url }));
+
+  //     setShowSavedPopup(true);
+  //     setTimeout(() => setShowSavedPopup(false), 1800);
+  //   } catch (err) {
+  //     console.error("Upload error:", err);
+  //     alert("Failed to upload image. Please try again.");
+  //   } finally {
+  //     setUploading(false);
+  //     setUploadPct(0);
+  //   }
+  // };
+
+  function handleLogout() {
+      signOut(auth)
+        .then(() => {
+          console.log("User signed out successfully");
+          setUser(null);
+          navigate("/");
+        })
+        .catch((error) => {
+          console.error("Error signing out:", error);
+        });
+    }
+  
   const onFileChange = async (e) => {
+    console.log(e, userData, "fcghvjbkn");
+    
+    // if (!userData || !userData.uid) return;
+
     const file = e.target.files?.[0];
     if (!file) return;
+
     if (!file.type.startsWith("image/")) {
       alert("Please select an image file (jpg, png, webp).");
       return;
     }
+
     try {
       setUploading(true);
       setUploadPct(0);
 
       const ext = file.name.split(".").pop() || "jpg";
-      const ref = storageRef(storage, `avatars/${user.uid}.${ext}`);
+      const storageReference = storageRef(storage, `avatars/${userData.uid}.${ext}`);
 
-      const task = uploadBytesResumable(ref, file);
-      task.on("state_changed", (snap) => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+      const uploadTask = uploadBytesResumable(storageReference, file);
+
+      uploadTask.on("state_changed", (snapshot) => {
+        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
         setUploadPct(pct);
       });
 
-      await task;
-      const url = await getDownloadURL(ref);
+      await uploadTask;
+      const url = await getDownloadURL(storageReference);
 
-      // ✅ Update Firebase Auth profile
-      await updateProfile(user, { photoURL: url });
+      // Update Firebase Auth profile
+      await updateProfile(userData, { photoURL: url });
 
-      // ✅ Update Firestore doc
+      // Update Firestore user doc
       await setDoc(
-        doc(db, "users", user.uid),
+        doc(db, "users", userData.uid),
         { photoURL: url, updatedAt: serverTimestamp() },
         { merge: true }
       );
 
-      // ✅ Force local state update so UI refreshes instantly
+      // Update local state so image shows immediately
       setUserDoc((prev) => ({ ...prev, photoURL: url }));
 
       setShowSavedPopup(true);
@@ -172,6 +262,7 @@ export default function Profile() {
       setUploadPct(0);
     }
   };
+  console.log(userDoc, "userDoc here see");
 
   return (
     <div className="relative bg-gray-50 dark:bg-gray-900 min-h-screen">
@@ -214,26 +305,31 @@ export default function Profile() {
             <label className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-full cursor-pointer hover:brightness-110 transition">
               <FaUpload />
               <span>Upload New Photo</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onFileChange}
+              <input type="file" accept="image/*" className="hidden" onChange={onFileChange} disabled={!userData}
+                // disabled={!userData || uploading}
+                // disabled={!userData}
               />
             </label>
-            {uploading && (
+
+            {uploading && <p>Uploading: {uploadPct}%</p>}
+      {showSavedPopup && <p className="text-green-600">Uploaded successfully!</p>}
+
+      {userData?.photoURL && (
+        <img src={userData.photoURL} alt="Profile" className="mt-4 w-24 h-24 rounded-full object-cover" />
+      )}
+            {/* {uploading && (
               <div className="mt-2 w-56 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#0090DE] transition-all"
                   style={{ width: `${uploadPct}%` }}
                 />
               </div>
-            )}
+            )} */}
 
             <h1 className="mt-4 text-2xl font-bold text-gray-800 dark:text-white">
-              {user.displayName || userDoc?.firstName || "User"}
+              {userData.displayName || userData?.firstName || "User"}
             </h1>
-            <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+            <p className="text-gray-500 dark:text-gray-400">{userData.email}</p>
 
             {/* Subscription Plan */}
             {plan && (
@@ -243,12 +339,12 @@ export default function Profile() {
               </div>
             )}
 
-            <button
-              onClick={() => signOut(auth)}
+            {/* <button
+              onClick={handleLogout}
               className="mt-4 px-5 py-2 bg-[#0090DE] text-white rounded-full hover:bg-[#007bbd] transition"
             >
               Sign Out
-            </button>
+            </button> */}
           </div>
 
           {/* Details */}
@@ -258,7 +354,7 @@ export default function Profile() {
                 <FaPhoneAlt /> Phone Number
               </h3>
               <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.phone || "Not added"}
+                {userData?.phoneNumber || "Not added"}
               </p>
             </div>
             <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
@@ -266,7 +362,7 @@ export default function Profile() {
                 <FaHome /> Address
               </h3>
               <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.address || "Not added"}
+                {userData?.address || "Not added"}
               </p>
             </div>
             <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
@@ -274,8 +370,8 @@ export default function Profile() {
                 Plan Start Date
               </h3>
               <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.planStart
-                  ? userDoc.planStart.toDate().toDateString()
+                {userData?.planStart
+                  ? userData.planStart.toDate().toDateString()
                   : "Not available"}
               </p>
             </div>

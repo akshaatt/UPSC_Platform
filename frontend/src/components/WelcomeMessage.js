@@ -9,31 +9,69 @@ function WelcomeMessage() {
   const [show, setShow] = useState(false);
   const timerRef = useRef(null);
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
+  // useEffect(() => {
+  //   const unsub = onAuthStateChanged(auth, (u) => {
+  //     if (u) {
+  //       // setUser(u);
+        
+        
+  //       console.log("Already logged in:", u);
+  //       // ✅ only show if not shown before in this session
+  //       const alreadyShown = sessionStorage.getItem("welcomeShown");
+  //       if (!alreadyShown) {
+  //         setShow(true);
+  //         sessionStorage.setItem("welcomeShown", "true");
 
-        // ✅ only show if not shown before in this session
-        const alreadyShown = sessionStorage.getItem("welcomeShown");
-        if (!alreadyShown) {
-          setShow(true);
-          sessionStorage.setItem("welcomeShown", "true");
+  //         // auto-hide after 6s
+  //         timerRef.current = setTimeout(() => setShow(false), 6000);
+  //       }
+  //     } else {
+  //       setUser(null);
+  //       setShow(false);
+  //       sessionStorage.removeItem("welcomeShown"); // reset when logged out
+  //     }
+  //   });
+  //   return () => {
+  //     unsub();
+  //     if (timerRef.current) clearTimeout(timerRef.current);
+  //   };
+  // }, []);
 
-          // auto-hide after 6s
-          timerRef.current = setTimeout(() => setShow(false), 6000);
-        }
-      } else {
-        setUser(null);
-        setShow(false);
-        sessionStorage.removeItem("welcomeShown"); // reset when logged out
-      }
-    });
-    return () => {
-      unsub();
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  // useEffect(() => {
+  //     const unsubAuth = onAuthStateChanged(auth, (u) => {
+  //       if (!u) {
+  //         setUser(null);
+  //         // setUserDoc(null);
+  //         setPlan(null);
+  //         setIsOtpPopup(false);
+  //         return;
+  //       }
+  
+  //       const ref = doc(db, "users", u.uid);
+  //       const unsubDoc = onSnapshot(ref, (snap) => {
+  //         const data = snap.exists() ? snap.data() : null;
+  // console.log(data, "userData check ");
+  
+  //         if (data?.isVerified) {
+  //           // only set if verified
+  //           setUser(u);
+  //           setUserDoc(data);
+  //           setPlan(data?.plan || null);
+  //           setIsOtpPopup(false);
+  //         } else {
+  //           // keep waiting until OTP verify
+  //           setUser(null);
+  //           setUserDoc(data);
+  //           setPlan(null);
+  //           setIsOtpPopup(true); // show OTP popup if unverified
+  //         }
+  //       });
+  
+  //       return () => unsubDoc();
+  //     });
+  
+  //     return () => unsubAuth();
+  //   }, []);
 
   // ✅ function to close + clear timer
   const handleClose = () => {
