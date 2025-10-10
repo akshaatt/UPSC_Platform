@@ -27,7 +27,8 @@ import UserInfoPopup from "./components/UserInfoPopup";
 import Footer from "./components/Footer";
 import ContactUsModal from "./components/ContactUsModal";
 import CurrentAffairsBanner from "./components/CurrentAffairsBanner";
-import DailyExam from "./components/DailyExam"; // ✅ Added
+import DailyExam from "./components/DailyExam";
+import QueryResponsePopup from "./components/QueryResponsePopup"; // ✅ New
 
 // Pages
 import Library from "./pages/Library";
@@ -44,8 +45,12 @@ import StudyRoom from "./pages/StudyRoom";
 import TestListPage from "./pages/TestListPage";
 import TestRunner from "./pages/TestRunner";
 import CurrentAffairs from "./pages/CurrentAffairs";
-import MainsTab from "./pages/MainsTab"; 
-import DailyQuiz from "./pages/DailyQuiz"; // ✅ Added
+import MainsTab from "./pages/MainsTab";
+import DailyQuiz from "./pages/DailyQuiz";
+import Csat from "./pages/Csat";
+import AboutUPSC from "./pages/AboutUPSC";
+
+
 
 // ✅ Homepage
 function HomePage() {
@@ -82,9 +87,7 @@ function HomePage() {
       <StudyRoomsPreview />
 
       {/* ✅ Daily Exam Component */}
-      
-        <DailyExam />
-      
+      <DailyExam />
     </>
   );
 }
@@ -173,7 +176,9 @@ function AppWrapper() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<HomePage />} />
-        <Route path="/dailyquiz" element={<DailyQuiz />} /> {/* ✅ New Route */}
+        <Route path="/aboutupsc" element={<AboutUPSC />} />
+
+        <Route path="/dailyquiz" element={<DailyQuiz />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/library" element={<Library />} />
@@ -184,6 +189,7 @@ function AppWrapper() {
         <Route path="/tests" element={<Tests />} />
         <Route path="/study-rooms" element={<StudyRoom />} />
         <Route path="/current-affairs" element={<CurrentAffairs />} />
+        <Route path="/csat-tests" element={<Csat />} />
 
         {/* Protected */}
         <Route
@@ -202,14 +208,8 @@ function AppWrapper() {
             </ProtectedTopicTests>
           }
         />
-        <Route
-          path="/tests/:examType/:subject/:subtopic"
-          element={
-            <ProtectedTopicTests>
-              <TestListPage />
-            </ProtectedTopicTests>
-          }
-        />
+
+        {/* ✅ Generic Test Runner route for Prelims + CSAT */}
         <Route
           path="/tests/:examType/:subject/:subtopic/:testId"
           element={
@@ -250,6 +250,9 @@ function AppWrapper() {
         open={isContactOpen}
         onClose={() => setIsContactOpen(false)}
       />
+
+      {/* ✅ Query Response Popup always mounted */}
+      <QueryResponsePopup />
     </div>
   );
 }

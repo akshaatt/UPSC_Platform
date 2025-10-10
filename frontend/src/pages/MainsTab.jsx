@@ -76,15 +76,25 @@ export default function MainsTab() {
 
     try {
       const uid = auth.currentUser.uid;
-      const userName = auth.currentUser.displayName || "Anonymous";
-      const userEmail = auth.currentUser.email || "—";
 
+      // 🔥 Fetch proper user profile from "users" collection
+      let userName = "Anonymous";
+      let userEmail = auth.currentUser.email || "—";
       let plan = "Free";
+
       try {
         const userDoc = await getDoc(doc(db, "users", uid));
-        if (userDoc.exists()) plan = userDoc.data().plan || "Free";
-      } catch {}
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          userName = data.name || auth.currentUser.displayName || "Anonymous";
+          userEmail = data.email || auth.currentUser.email || "—";
+          plan = data.plan || "Free";
+        }
+      } catch (err) {
+        console.error("⚠️ Failed to fetch user profile:", err);
+      }
 
+      // ✅ Upload file (if any)
       let fileUrl = null;
       if (file) {
         const storageRef = ref(storage, `mains/${uid}/${Date.now()}-${file.name}`);
@@ -92,6 +102,7 @@ export default function MainsTab() {
         fileUrl = await getDownloadURL(storageRef);
       }
 
+      // ✅ Save submission in Firestore
       await addDoc(collection(db, `users/${uid}/mainsSubmissions`), {
         userId: uid,
         userName,
@@ -228,7 +239,7 @@ export default function MainsTab() {
                           onClick={() => handleRetry(q.id)}
                           className="mt-3 px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-sm"
                         >
-                          Retry
+                          Retry Rs.100
                         </button>
                       </div>
                     ) : (

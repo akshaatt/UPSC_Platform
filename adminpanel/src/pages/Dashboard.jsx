@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Papa from "papaparse";
@@ -6,7 +7,9 @@ import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import html2canvas from "html2canvas";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { MessageCircle } from "lucide-react";
 import {
   LogOut,
   LayoutGrid,
@@ -19,13 +22,13 @@ import {
   X,
   Newspaper,
   PenLine,
+  Calendar,
 } from "lucide-react"; 
 
 import Logo from "../components/Logo.jsx";
 import AddTests from "../components/AddTests";
 import AddMainsQuestions from "./AddMainsQuestions";
 import StudentMainsData from "../components/StudentMainsData";
-
 import { auth, db } from "../firebase";
 import {
   collection,
@@ -63,6 +66,12 @@ const tabs = [
   { key: "mains", label: "Add Mains Questions", icon: PenLine },
   { key: "mainsData", label: "Student Mains Data", icon: Users },
   { key: "dailyTestControl", label: "Daily Test Control", icon: PenLine }, // ✅ new tab
+  { key: "csatControl", label: "CSAT Control", icon: BookPlus },
+  { key: "queries", label: "User Queries", icon: MessageCircle },
+  { key: "calendarControl", label: "Calendar", icon: Calendar },
+  { key: "headlinesPdf", label: "Generate Headlines PDF", icon: Newspaper },
+
+
 ];
 
 export default function Dashboard() {
@@ -133,9 +142,585 @@ export default function Dashboard() {
             {active === "mains" && <AddMainsQuestions />}
             {active === "mainsData" && <StudentMainsData />}
             {active === "dailyTestControl" && <DailyTestControl />} {/* ✅ New */}
+            {active === "csatControl" && <CsatControl />}
+            {active === "queries" && <QueriesAdmin />}
+            {active === "calendarControl" && <CalendarAdmin />}
+            {active === "headlinesPdf" && <HeadlinesPdfGenerator />}
+
+
+
           </motion.div>
         </main>
       </div>
+    </div>
+  );
+}
+/*---------------------------
+HEADLINE PDF GENERATOR
+---------------------------*/
+function HeadlinesPdfGenerator() {
+  const [headline, setHeadline] = useState("");
+  const [headlines, setHeadlines] = useState([]);
+  const [date, setDate] = useState("");
+
+  const addHeadline = () => {
+    if (!headline.trim()) return;
+    setHeadlines([...headlines, headline.trim()]);
+    setHeadline("");
+  };
+
+  const deleteHeadline = (i) => {
+    setHeadlines(headlines.filter((_, idx) => idx !== i));
+  };
+
+  const generatePDF = async () => {
+  const doc = new jsPDF("p", "mm", "a4");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const templateImg = "/White and Black Professional Magazine Cover.png"; 
+  // ✅ ensure this file is in public folder
+
+  let y = 90; // Headlines start below "HERE ARE YOUR MAJOR CURRENT AFFAIRS"
+  const leftMargin = 20;
+  const rightMargin = pageWidth - 20;
+  const lineHeight = 10;
+  const maxPerPage = 15;
+
+  let count = 0;
+  for (let i = 0; i < headlines.length; i++) {
+    if (count === 0) {
+      // Background template
+      doc.addImage(templateImg, "PNG", 0, 0, pageWidth, pageHeight);
+
+      // Insert Date (top right near DATE:)
+      if (date) {
+        doc.setFont("times", "normal");
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text(date, pageWidth - 40, 42); 
+      }
+    }
+
+    // Headline text
+    doc.setFont("times", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+
+    const text = `${i + 1}. ${headlines[i]}`;
+    const splitText = doc.splitTextToSize(text, rightMargin - leftMargin);
+    doc.text(splitText, leftMargin, y);
+
+    y += splitText.length * 8 + lineHeight;
+    count++;
+
+    // Page overflow
+    if (y > pageHeight - 30 || count >= maxPerPage) {
+      doc.addPage();
+      y = 90;
+      count = 0;
+    }
+  }
+
+  doc.save(`Satyapath_Headlines_${date || "no-date"}.pdf`);
+};
+
+
+  return (
+    <div className="p-6 bg-gray-900 rounded-xl space-y-6 text-white">
+      <h2 className="text-2xl font-bold text-cyan-400">📰 Generate Daily Current Affairs PDF</h2>
+
+      {/* Date */}
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="p-2 rounded bg-gray-800 text-white"
+      />
+
+      {/* Headline input */}
+      <div className="flex gap-3">
+        <input
+          type="text"
+          value={headline}
+          onChange={(e) => setHeadline(e.target.value)}
+          placeholder="Enter a headline"
+          className="flex-1 p-2 rounded bg-gray-800 text-white"
+        />
+        <button
+          onClick={addHeadline}
+          className="px-4 py-2 bg-cyan-600 rounded hover:bg-cyan-700"
+        >
+          ➕ Add
+        </button>
+      </div>
+
+      {/* Headlines list */}
+      <div className="space-y-2">
+        {headlines.map((h, i) => (
+          <div
+            key={i}
+            className="flex justify-between items-center p-2 bg-gray-800 rounded border border-gray-700"
+          >
+            <span>{i + 1}. {h}</span>
+            <button
+              onClick={() => deleteHeadline(i)}
+              className="text-red-400 hover:text-red-600"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {headlines.length > 0 && (
+        <button
+          onClick={generatePDF}
+          className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg text-white font-semibold hover:opacity-90"
+        >
+          🚀 Generate PDF
+        </button>
+      )}
+    </div>
+  );
+}
+/*===========================
+calender
+===========================*/
+function CalendarAdmin() {
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [events, setEvents] = useState([]);
+
+  const [pdfTitle, setPdfTitle] = useState("");
+  const [file, setFile] = useState(null);
+  const [downloads, setDownloads] = useState([]);
+  const [msg, setMsg] = useState("");
+  const storage = getStorage();
+
+  // 🔹 Fetch Events
+  useEffect(() => {
+    const q = query(collection(db, "upscCalendarEvents"), orderBy("date", "asc"));
+    const unsub = onSnapshot(q, (snap) =>
+      setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
+
+  // 🔹 Fetch Downloads
+  useEffect(() => {
+    const q = query(collection(db, "upscCalendarDownloads"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) =>
+      setDownloads(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
+
+  // 🔹 Add Event
+  const addEvent = async (e) => {
+    e.preventDefault();
+    if (!eventTitle || !eventDate) return setMsg("⚠️ Title and date required.");
+    try {
+      await addDoc(collection(db, "upscCalendarEvents"), {
+        title: eventTitle,
+        date: eventDate,
+        createdAt: serverTimestamp(),
+      });
+      setEventTitle("");
+      setEventDate("");
+      setMsg("✅ Event added!");
+    } catch (err) {
+      setMsg("❌ Error: " + err.message);
+    }
+  };
+
+  const deleteEvent = async (id) => {
+    if (!window.confirm("Delete this event?")) return;
+    await deleteDoc(doc(db, "upscCalendarEvents", id));
+  };
+
+  // 🔹 Upload PDF
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!pdfTitle || !file) return setMsg("⚠️ Title and file required.");
+    try {
+      const storagePath = `upsc-calendar/${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, storagePath);
+
+      await uploadBytes(fileRef, file);
+      const fileUrl = await getDownloadURL(fileRef);
+
+      await addDoc(collection(db, "upscCalendarDownloads"), {
+        title: pdfTitle,
+        fileName: file.name,
+        fileUrl,
+        storagePath,
+        createdAt: serverTimestamp(),
+      });
+
+      setPdfTitle("");
+      setFile(null);
+      setMsg("✅ File uploaded!");
+    } catch (err) {
+      setMsg("❌ Upload failed: " + err.message);
+    }
+  };
+
+  const handleDeletePdf = async (item) => {
+    if (!window.confirm("Delete this file?")) return;
+    await deleteObject(ref(storage, item.storagePath));
+    await deleteDoc(doc(db, "upscCalendarDownloads", item.id));
+  };
+
+  return (
+    <div className="space-y-10">
+      <h2 className="text-2xl font-bold text-gray-100">📅 UPSC Calendar Control</h2>
+
+      {/* Add Event */}
+      <div className="bg-gray-900 p-6 rounded-xl">
+        <h3 className="text-lg font-semibold text-white mb-4">➕ Add Event</h3>
+        <form onSubmit={addEvent} className="flex gap-3">
+          <input
+            value={eventTitle}
+            onChange={(e) => setEventTitle(e.target.value)}
+            placeholder="Event title (e.g., Prelims Exam)"
+            className="flex-1 p-3 rounded bg-gray-800 text-white"
+          />
+          <input
+            type="date"
+            value={eventDate}
+            onChange={(e) => setEventDate(e.target.value)}
+            className="p-3 rounded bg-gray-800 text-white"
+          />
+          <button className="px-4 py-2 bg-cyan-600 rounded text-white">Add</button>
+        </form>
+        <div className="mt-4 space-y-2">
+          {events.map((ev) => (
+            <div key={ev.id} className="flex justify-between bg-gray-800 p-3 rounded">
+              <span className="text-white">{ev.title} — {ev.date}</span>
+              <button
+                onClick={() => deleteEvent(ev.id)}
+                className="px-3 py-1 bg-red-600 text-white rounded"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Upload PDF */}
+      <div className="bg-gray-900 p-6 rounded-xl">
+        <h3 className="text-lg font-semibold text-white mb-4">📂 Upload Calendar PDF</h3>
+        <form onSubmit={handleUpload} className="flex gap-3 flex-wrap">
+          <input
+            value={pdfTitle}
+            onChange={(e) => setPdfTitle(e.target.value)}
+            placeholder="PDF Title"
+            className="flex-1 p-3 rounded bg-gray-800 text-white"
+          />
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setFile(e.target.files[0])}
+            className="p-3 text-white"
+          />
+          <button className="px-4 py-2 bg-purple-600 rounded text-white">Upload</button>
+        </form>
+        <div className="mt-4 space-y-2">
+          {downloads.map((d) => (
+            <div key={d.id} className="flex justify-between bg-gray-800 p-3 rounded">
+              <span className="text-white">{d.title}</span>
+              <div className="flex gap-2">
+                <a
+                  href={d.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 bg-green-600 text-white rounded"
+                >
+                  View
+                </a>
+                <button
+                  onClick={() => handleDeletePdf(d)}
+                  className="px-3 py-1 bg-red-600 text-white rounded"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {msg && <p className="text-sm text-cyan-400">{msg}</p>}
+    </div>
+  );
+}
+
+/*------------------------------
+conatct us
+------------------------------*/
+function QueriesAdmin() {
+  const [queries, setQueries] = useState([]);
+  const [replies, setReplies] = useState({});
+  const [passwords, setPasswords] = useState({});
+
+  useEffect(() => {
+    const q = query(collection(db, "queries"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setQueries(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  // ✅ Resolve handler
+  const markResolved = async (id, type) => {
+    if (passwords[id] !== "1234") {
+      alert("❌ Wrong password. Resolve not allowed.");
+      return;
+    }
+
+    let updateData = { status: "resolved" };
+    if (type === "form") {
+      updateData.reply = replies[id] || "No reply provided.";
+    }
+
+    await setDoc(doc(db, "queries", id), updateData, { merge: true });
+
+    // reset
+    setReplies((prev) => ({ ...prev, [id]: "" }));
+    setPasswords((prev) => ({ ...prev, [id]: "" }));
+  };
+
+  // ✅ Export All Queries to Excel (Firestore direct)
+  const exportToExcel = async () => {
+    try {
+      const snap = await getDocs(collection(db, "queries"));
+      if (snap.empty) {
+        alert("No queries in Firestore");
+        return;
+      }
+
+      const data = snap.docs.map((d) => {
+        const q = d.data();
+        return {
+          Name: q.name,
+          Phone: q.phone,
+          Email: q.email || "N/A",
+          Query: q.query,
+          Type: q.type === "form" ? "Form Submission" : "Call Request",
+          Reply: q.reply || "N/A",
+          Status: q.status === "resolved" ? "Solved" : "Unsolved",
+          CreatedAt: q.createdAt
+            ? new Date(q.createdAt.toDate()).toLocaleString()
+            : "N/A",
+          Image: q.imageUrl || "N/A",
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Queries");
+      XLSX.writeFile(wb, "all_queries_backup.xlsx");
+    } catch (err) {
+      console.error("❌ Excel export failed:", err);
+      alert("Failed to export queries");
+    }
+  };
+
+  // ✅ Delete only from UI
+  const deleteFromUI = (id) => {
+    setQueries((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const pending = queries.filter((q) => q.status === "pending");
+  const resolved = queries.filter((q) => q.status === "resolved");
+
+  const renderTypeBadge = (type) => {
+    if (type === "form") {
+      return (
+        <span className="ml-2 px-2 py-1 text-xs font-semibold bg-blue-600 text-white rounded">
+          📄 Form
+        </span>
+      );
+    }
+    if (type === "call") {
+      return (
+        <span className="ml-2 px-2 py-1 text-xs font-semibold bg-purple-600 text-white rounded">
+          📞 Call
+        </span>
+      );
+    }
+    return null;
+  };
+
+  // ✅ Show image block
+  const renderImage = (q) => {
+    if (!q.imageUrl) return null;
+    return (
+      <div className="mt-3">
+        <p className="text-gray-400 text-sm mb-1">📷 Attached Image:</p>
+        <a href={q.imageUrl} target="_blank" rel="noopener noreferrer">
+          <img
+            src={q.imageUrl}
+            alt="attachment"
+            className="w-32 h-32 object-cover rounded-lg border border-gray-600 hover:scale-105 transition"
+          />
+        </a>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 min-h-screen bg-gradient-to-br from-black via-gray-900 to-black text-white">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-3xl font-extrabold text-cyan-400 flex items-center gap-3">
+          📩 User Queries
+          {/* ✅ Pending Counter (Blinking) */}
+          {pending.length > 0 && (
+            <span className="ml-2 px-3 py-1 text-sm font-bold rounded-full bg-red-600 text-white animate-pulse">
+              {pending.length}
+            </span>
+          )}
+        </h2>
+        <button
+          onClick={exportToExcel}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-semibold shadow-md"
+        >
+          📊 Download All Queries (Excel)
+        </button>
+      </div>
+
+      {/* Pending */}
+      <h3 className="text-xl font-semibold text-yellow-400 mb-3">⏳ Pending</h3>
+      {pending.length === 0 ? (
+        <p className="text-gray-500 mb-6">No pending queries</p>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-6 mb-10">
+          {pending.map((q) => (
+            <div
+              key={q.id}
+              className="p-5 bg-gray-800/80 border border-gray-700 rounded-xl shadow-lg"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-bold text-lg text-cyan-300">
+                  {q.name} {renderTypeBadge(q.type)}
+                </p>
+                <button
+                  onClick={() => deleteFromUI(q.id)}
+                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                >
+                  🗑 Remove (UI)
+                </button>
+              </div>
+              <p className="text-gray-400">📞 {q.phone}</p>
+              <p className="text-gray-300 mt-2">{q.query}</p>
+
+              {/* Image block */}
+              {renderImage(q)}
+
+              {q.type === "form" && (
+                <div className="mt-3 space-y-3">
+                  <textarea
+                    placeholder="Write your reply..."
+                    value={replies[q.id] || ""}
+                    onChange={(e) =>
+                      setReplies((prev) => ({
+                        ...prev,
+                        [q.id]: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 rounded-lg bg-gray-900 text-white border border-gray-600"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Enter password (1234)"
+                    value={passwords[q.id] || ""}
+                    onChange={(e) =>
+                      setPasswords((prev) => ({
+                        ...prev,
+                        [q.id]: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 rounded-lg bg-gray-900 text-white border border-gray-600"
+                  />
+                  <button
+                    onClick={() => markResolved(q.id, "form")}
+                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md"
+                  >
+                    ✅ Resolve & Reply
+                  </button>
+                </div>
+              )}
+
+              {q.type === "call" && (
+                <div className="mt-3 space-y-3">
+                  <input
+                    type="password"
+                    placeholder="Enter password (1234)"
+                    value={passwords[q.id] || ""}
+                    onChange={(e) =>
+                      setPasswords((prev) => ({
+                        ...prev,
+                        [q.id]: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 rounded-lg bg-gray-900 text-white border border-gray-600"
+                  />
+                  <button
+                    onClick={() => markResolved(q.id, "call")}
+                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-md"
+                  >
+                    ☎️ I Have Called
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Resolved */}
+      <h3 className="text-xl font-semibold text-green-400 mb-3">✔️ Resolved</h3>
+      {resolved.length === 0 ? (
+        <p className="text-gray-500">No resolved queries</p>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-6">
+          {resolved.map((q) => (
+            <div
+              key={q.id}
+              className="p-5 bg-gray-800/60 border border-gray-700 rounded-xl shadow-md"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-bold text-lg text-cyan-300">
+                  {q.name} {renderTypeBadge(q.type)}
+                </p>
+                <button
+                  onClick={() => deleteFromUI(q.id)}
+                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                >
+                  🗑 Remove (UI)
+                </button>
+              </div>
+              <p className="text-gray-400">📞 {q.phone}</p>
+              <p className="text-gray-300 mt-2">{q.query}</p>
+
+              {/* Image block */}
+              {renderImage(q)}
+
+              {q.type === "form" && q.reply && (
+                <div className="mt-2 p-3 bg-green-900/40 border border-green-600 rounded-lg">
+                  <p className="text-green-400 text-sm">💬 Reply: {q.reply}</p>
+                </div>
+              )}
+              {q.type === "call" && (
+                <p className="text-purple-400 mt-2">📞 Call request handled</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -285,6 +870,206 @@ function DailyTestControl() {
       </div>
 
       {msg && <p className="text-sm mt-2 text-cyan-400">{msg}</p>}
+    </div>
+  );
+}
+/*--------------------------------
+CSAT PANEL
+--------------------------------*/
+/* ---------------------------
+   ✅ New Component: CSAT Control
+----------------------------*/
+function CsatControl() {
+  const [topic, setTopic] = useState("comprehension");
+  const [subtopic, setSubtopic] = useState("");
+  const [file, setFile] = useState(null);
+  const [tests, setTests] = useState([]);
+  const [msg, setMsg] = useState("");
+
+  // Topics
+  const topics = [
+    "comprehension",
+    "interpersonal-skills",
+    "logical-reasoning",
+    "decision-making",
+    "general-mental-ability",
+    "basic-numeracy",
+    "data-interpretation",
+    "maths",
+    "complete-csat-tests",
+  ];
+
+  const mathsSubtopics = [
+    "lcm-hcf",
+    "rational-numbers",
+    "square-cube-roots",
+    "averages",
+    "set-theory",
+    "decimal-fractions",
+    "ratio-proportion",
+    "simplification",
+    "number-system",
+    "surds-indices",
+    "divisibility",
+    "percentages",
+    "remainder-theorem",
+    "probability",
+    "trains",
+    "boats-streams",
+    "time-work",
+    "partnership",
+    "si-ci",
+    "mensuration",
+    "time-distance",
+    "profit-loss",
+    "work-wages",
+    "pipes-cisterns",
+    "permutation-combination",
+    "alligation-mixtures",
+    "geometry",
+  ];
+
+  // 🔥 Load tests for selected topic/subtopic
+  useEffect(() => {
+    const path =
+      topic === "maths" && subtopic
+        ? collection(db, "csatQuizzes", "maths", "subtopics", subtopic, "tests")
+        : collection(db, "csatQuizzes", topic, "tests");
+
+    const unsub = onSnapshot(path, (snap) => {
+      setTests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => unsub();
+  }, [topic, subtopic]);
+
+  // ✅ Upload JSON file
+  const uploadJson = async () => {
+    if (!file) return setMsg("⚠️ Please select a JSON file.");
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (!Array.isArray(data)) return setMsg("❌ Invalid JSON format (must be array).");
+
+      const testId = "test-" + Date.now();
+
+      const ref =
+        topic === "maths" && subtopic
+          ? doc(db, "csatQuizzes", "maths", "subtopics", subtopic, "tests", testId)
+          : doc(db, "csatQuizzes", topic, "tests", testId);
+
+      await setDoc(ref, {
+        title: `Test ${tests.length + 1}`,
+        description: `Auto-uploaded test for ${subtopic || topic}`,
+        questions: data,
+        createdAt: serverTimestamp(),
+      });
+
+      setMsg("✅ Test uploaded successfully!");
+      setFile(null);
+    } catch (err) {
+      setMsg("❌ " + err.message);
+    }
+  };
+
+  // ✅ Delete test
+  const deleteTest = async (id) => {
+    if (!window.confirm("Delete this test?")) return;
+
+    const ref =
+      topic === "maths" && subtopic
+        ? doc(db, "csatQuizzes", "maths", "subtopics", subtopic, "tests", id)
+        : doc(db, "csatQuizzes", topic, "tests", id);
+
+    await deleteDoc(ref);
+    setMsg("🗑️ Test deleted.");
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-100">📝 CSAT Test Control</h2>
+
+      {/* Topic Selection */}
+      <div className="flex gap-4">
+        <select
+          value={topic}
+          onChange={(e) => {
+            setTopic(e.target.value);
+            setSubtopic("");
+          }}
+          className="p-3 rounded bg-gray-800 text-white"
+        >
+          {topics.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+
+        {topic === "maths" && (
+          <select
+            value={subtopic}
+            onChange={(e) => setSubtopic(e.target.value)}
+            className="p-3 rounded bg-gray-800 text-white"
+          >
+            <option value="">-- Select Subtopic --</option>
+            {mathsSubtopics.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* File Upload */}
+      <div className="bg-gray-900 p-6 rounded-xl space-y-4">
+        <input
+          type="file"
+          accept="application/json"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 
+            file:rounded-lg file:border-0 file:text-sm file:font-semibold 
+            file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+        />
+        <button
+          onClick={uploadJson}
+          className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+        >
+          Upload Test JSON
+        </button>
+      </div>
+
+      {/* Tests List */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-3">📂 Existing Tests</h3>
+        {tests.length === 0 ? (
+          <p className="text-gray-400">No tests available for this topic.</p>
+        ) : (
+          <div className="space-y-2">
+            {tests.map((t) => (
+              <div
+                key={t.id}
+                className="flex justify-between items-center p-4 rounded bg-gray-800 text-white"
+              >
+                <div>
+                  <p className="font-medium">{t.title || t.id}</p>
+                  <p className="text-sm text-gray-400">{t.description}</p>
+                </div>
+                <button
+                  onClick={() => deleteTest(t.id)}
+                  className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {msg && <p className="text-cyan-400 text-sm">{msg}</p>}
     </div>
   );
 }

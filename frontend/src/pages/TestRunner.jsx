@@ -41,17 +41,38 @@ export default function TestRunner() {
       try {
         console.log("🔥 Params from URL:", { examType, subject, subtopic, testId });
 
-        const ref = doc(
-          db,
-          "tests",
-          examType,
-          "subjects",
-          subject,
-          "subtopics",
-          subtopic,
-          "tests",
-          testId
-        );
+        let ref;
+
+        // ✅ CSAT tests
+        if (examType === "csat") {
+          if (subject === "maths") {
+            ref = doc(
+              db,
+              "csatQuizzes",
+              "maths",
+              "subtopics",
+              subtopic,
+              "tests",
+              testId
+            );
+          } else {
+            ref = doc(db, "csatQuizzes", subject, "tests", testId);
+          }
+        }
+        // ✅ Prelims tests
+        else {
+          ref = doc(
+            db,
+            "tests",
+            examType,
+            "subjects",
+            subject,
+            "subtopics",
+            subtopic,
+            "tests",
+            testId
+          );
+        }
 
         console.log("📂 Firestore ref path:", ref.path);
 
@@ -73,21 +94,20 @@ export default function TestRunner() {
         else if (Array.isArray(raw)) questions = raw;
         else questions = [];
 
-        console.log("📊 Extracted questions:", questions);
-
         questions = questions
-          .filter((q) => q && q.question && Array.isArray(q.options) && q.options.length > 0)
+          .filter(
+            (q) => q && (q.question || q.text) && Array.isArray(q.options) && q.options.length > 0
+          )
           .map((q, i) => ({
             id: q.id || `q${i}`,
-            question: q.question,
+            question: q.question || q.text,
             options: q.options,
             correctIndex: typeof q.correctIndex === "number" ? q.correctIndex : null,
-            answer: q.answer ?? null,
+            answer: q.answer ?? q.correct ?? null,
             explanation: q.explanation ?? "",
           }));
 
         if (!questions.length) {
-          console.warn("⚠️ No valid questions extracted:", raw);
           alert("❌ This test has no questions.");
           navigate("/");
           return;
@@ -97,35 +117,32 @@ export default function TestRunner() {
 
         const norm = {
           id: snap.id,
-          title: raw.title || "Prelims Test",
+          title: raw.title || (examType === "csat" ? "CSAT Test" : "Prelims Test"),
           questions,
         };
         setTestDoc(norm);
         setSecondsLeft(questions.length * 30);
 
-        // prevent reattempt
-       // prevent reattempt with safety
-const user = auth.currentUser;
-if (user) {
-  try {
-    const attemptRef = doc(
-      db,
-      "attempts",
-      `${examType}_${subject}_${subtopic}_${testId}_${user.uid}`
-    );
-    const attemptSnap = await getDoc(attemptRef);
+        // ✅ Prevent reattempt
+        const user = auth.currentUser;
+        if (user) {
+          try {
+            const attemptRef = doc(
+              db,
+              "attempts",
+              `${examType}_${subject || "general"}_${subtopic || "general"}_${testId}_${user.uid}`
+            );
+            const attemptSnap = await getDoc(attemptRef);
 
-    if (attemptSnap.exists()) {
-      alert("⚠️ You have already attempted this test.");
-      navigate("/");
-      return;
-    }
-  } catch (err) {
-    console.warn("⚠️ Attempt check failed, ignoring:", err.message);
-    // Agar permission issue ya koi aur error ho, test fir bhi allow hoga
-  }
-}
-
+            if (attemptSnap.exists()) {
+              alert("⚠️ You have already attempted this test.");
+              navigate("/");
+              return;
+            }
+          } catch (err) {
+            console.warn("⚠️ Attempt check failed, ignoring:", err.message);
+          }
+        }
       } catch (e) {
         console.error("🚨 Fetch failed:", e);
         alert("Failed to load test.");
@@ -306,7 +323,7 @@ if (user) {
 
     try {
       const user = auth.currentUser;
-      const attemptId = `${examType}_${subject}_${subtopic}_${testId}_${user?.uid || "anon"}`;
+      const attemptId = `${examType}_${subject || "general"}_${subtopic || "general"}_${testId}_${user?.uid || "anon"}`;
       await setDoc(doc(db, "attempts", attemptId), {
         userId: user?.uid || "anon",
         examType,
@@ -330,7 +347,7 @@ if (user) {
     }
   };
 
-  // --- Simple pie ---
+  // --- Simple pie chart ---
   const Pie = ({ correct, wrong, total }) => {
     const done = correct + wrong;
     const green = ((correct / total) * 360).toFixed(0);
@@ -341,10 +358,7 @@ if (user) {
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="min-h-screen pt-20 px-4 md:px-8 bg-gray-900 text-gray-100"
-    >
+    <div ref={containerRef} className="min-h-screen pt-20 px-4 md:px-8 bg-gray-900 text-gray-100">
       {/* Start screen */}
       {!started && (
         <div className="max-w-4xl mx-auto bg-gray-800/70 p-6 rounded-2xl">
@@ -481,98 +495,95 @@ if (user) {
       )}
 
       {/* Results */}
-     {/* Results */}
-<AnimatePresence>
-  {showResults && result && (
-    <motion.div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.div
-        className="bg-gray-900 p-6 rounded-2xl w-full max-w-4xl overflow-y-auto max-h-[90vh]"
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-      >
-        <h3 className="text-2xl font-bold mb-4">Your Results</h3>
-
-        {/* Summary Section */}
-        <div className="flex items-center gap-6 mb-6">
-          <Pie correct={result.correct} wrong={result.wrong} total={result.total} />
-          <div className="space-y-1">
-            <div>Total Questions: <b>{result.total}</b></div>
-            <div>Correct: <b className="text-green-400">{result.correct}</b></div>
-            <div>Wrong: <b className="text-red-400">{result.wrong}</b></div>
-            <div>Marks (3/-1): <b className="text-cyan-400">{result.marks}</b></div>
-
-            {/* 🔥 Feedback line */}
-            <div className="mt-3 text-lg font-semibold text-yellow-300">
-              {(() => {
-                const percent = (result.correct / result.total) * 100;
-                if (percent < 20) return "Keep practicing, you need to strengthen your basics.";
-                if (percent < 50) return "Good attempt, but you need more revision.";
-                if (percent < 75) return "Well done! You’re on the right track.";
-                return "Excellent! You’re exam-ready.";
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Questions */}
-        <div className="max-h-[50vh] overflow-auto rounded border border-gray-700 mt-6">
-          {result.detail.map((d) => (
-            <div key={d.index} className="p-4 border-b border-gray-800">
-              <div className="mb-2 font-semibold">Q{d.index}. {d.question}</div>
-              <div className="grid md:grid-cols-2 gap-2">
-                {d.options.map((opt, i) => {
-                  const isCorrect = i === d.correctIndex || (d.answer && opt === d.answer);
-                  const isChosen = i === d.chosenIndex;
-                  return (
-                    <div
-                      key={i}
-                      className={[
-                        "px-3 py-2 rounded border",
-                        isCorrect
-                          ? "border-green-500 bg-green-500/10"
-                          : isChosen
-                          ? "border-red-500 bg-red-500/10"
-                          : "border-gray-700 bg-gray-800",
-                      ].join(" ")}
-                    >
-                      {opt}
-                    </div>
-                  );
-                })}
-              </div>
-              {d.explanation && (
-                <div className="mt-2 text-sm text-gray-300">
-                  <b>Explanation: </b>{d.explanation}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Close Button */}
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            onClick={() => {
-              setShowResults(false);
-              navigate("/topic-tests"); // 👈 yahan apne TopicTest.js ka route daalo
-            }}
-            className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700"
+      <AnimatePresence>
+        {showResults && result && (
+          <motion.div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
           >
-            Go to Tests Dashboard
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
+            <motion.div
+              className="bg-gray-900 p-6 rounded-2xl w-full max-w-4xl overflow-y-auto max-h-[90vh]"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+            >
+              <h3 className="text-2xl font-bold mb-4">Your Results</h3>
 
+              {/* Summary Section */}
+              <div className="flex items-center gap-6 mb-6">
+                <Pie correct={result.correct} wrong={result.wrong} total={result.total} />
+                <div className="space-y-1">
+                  <div>Total Questions: <b>{result.total}</b></div>
+                  <div>Correct: <b className="text-green-400">{result.correct}</b></div>
+                  <div>Wrong: <b className="text-red-400">{result.wrong}</b></div>
+                  <div>Marks (3/-1): <b className="text-cyan-400">{result.marks}</b></div>
 
+                  {/* 🔥 Feedback line */}
+                  <div className="mt-3 text-lg font-semibold text-yellow-300">
+                    {(() => {
+                      const percent = (result.correct / result.total) * 100;
+                      if (percent < 20) return "Keep practicing, you need to strengthen your basics.";
+                      if (percent < 50) return "Good attempt, but you need more revision.";
+                      if (percent < 75) return "Well done! You’re on the right track.";
+                      return "Excellent! You’re exam-ready.";
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed Questions */}
+              <div className="max-h-[50vh] overflow-auto rounded border border-gray-700 mt-6">
+                {result.detail.map((d) => (
+                  <div key={d.index} className="p-4 border-b border-gray-800">
+                    <div className="mb-2 font-semibold">Q{d.index}. {d.question}</div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                      {d.options.map((opt, i) => {
+                        const isCorrect = i === d.correctIndex || (d.answer && opt === d.answer);
+                        const isChosen = i === d.chosenIndex;
+                        return (
+                          <div
+                            key={i}
+                            className={[
+                              "px-3 py-2 rounded border",
+                              isCorrect
+                                ? "border-green-500 bg-green-500/10"
+                                : isChosen
+                                ? "border-red-500 bg-red-500/10"
+                                : "border-gray-700 bg-gray-800",
+                            ].join(" ")}
+                          >
+                            {opt}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {d.explanation && (
+                      <div className="mt-2 text-sm text-gray-300">
+                        <b>Explanation: </b>{d.explanation}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Close Button */}
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowResults(false);
+                    navigate("/topic-test"); // 👈 change this if you want to redirect differently
+                  }}
+                  className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700"
+                >
+                  Commence More Tests
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Violation popup */}
       <AnimatePresence>

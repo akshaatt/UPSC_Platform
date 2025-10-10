@@ -88,26 +88,27 @@ function AnimatedBanner() {
         </motion.p>
 
         {/* Buttons */}
-        <motion.div
-          initial={{ y: 28, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.18, ease: "easeOut" }}
-          className="mt-8 flex flex-col sm:flex-row gap-3"
-        >
-          <a
-            href="#get-started"
-            className="px-5 py-2.5 rounded-lg font-semibold text-center text-white shadow-lg"
-            style={{ backgroundColor: "#0090DE" }}
-          >
-            Start Learning
-          </a>
-          <a
-            href="/library"
-            className="px-5 py-2.5 rounded-lg font-semibold text-center text-white/90 hover:text-white border border-white/30 hover:border-white/60 transition shadow-md"
-          >
-            Explore Library
-          </a>
-        </motion.div>
+        {/* Buttons */}
+<motion.div
+  initial={{ y: 28, opacity: 0 }}
+  animate={{ y: 0, opacity: 1 }}
+  transition={{ duration: 0.7, delay: 0.18, ease: "easeOut" }}
+  className="mt-8 flex flex-col sm:flex-row gap-3"
+>
+  <a
+    href="/aboutupsc"
+    className="px-5 py-2.5 rounded-lg font-semibold text-center text-white shadow-lg"
+    style={{ backgroundColor: "#0090DE" }}
+  >
+    All About UPSC
+  </a>
+  <a
+    href="/library"
+    className="px-5 py-2.5 rounded-lg font-semibold text-center text-white/90 hover:text-white border border-white/30 hover:border-white/60 transition shadow-md"
+  >
+    Explore Library
+  </a>
+</motion.div>
 
         {/* Chips */}
         <div className="relative mt-10 flex flex-wrap gap-4">
