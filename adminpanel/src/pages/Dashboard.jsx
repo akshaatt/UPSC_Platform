@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-
+import { collectionGroup } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Papa from "papaparse";
@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
+import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { MessageCircle } from "lucide-react";
 import {
@@ -23,6 +24,7 @@ import {
   Newspaper,
   PenLine,
   Calendar,
+  Crown,
 } from "lucide-react"; 
 
 import Logo from "../components/Logo.jsx";
@@ -48,6 +50,7 @@ import {
   getStorage,
   ref,
   uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
@@ -55,6 +58,8 @@ import {
 // 🔹 Tabs
 const tabs = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
+  { key: "queries", label: "User Queries", icon: MessageCircle },
+   { key: "plans", label: "Subscription Plans", icon: Crown },
   { key: "room", label: "Create Room", icon: BookPlus },
   { key: "yt", label: "Add YouTube Video", icon: Youtube },
   { key: "custom", label: "Add Custom Video", icon: Video },
@@ -67,11 +72,10 @@ const tabs = [
   { key: "mainsData", label: "Student Mains Data", icon: Users },
   { key: "dailyTestControl", label: "Daily Test Control", icon: PenLine }, // ✅ new tab
   { key: "csatControl", label: "CSAT Control", icon: BookPlus },
-  { key: "queries", label: "User Queries", icon: MessageCircle },
   { key: "calendarControl", label: "Calendar", icon: Calendar },
   { key: "headlinesPdf", label: "Generate Headlines PDF", icon: Newspaper },
-
-
+  { key: "exclusiveNotes", label: "Exclusive Notes", icon: Crown },
+ 
 ];
 
 export default function Dashboard() {
@@ -131,6 +135,9 @@ export default function Dashboard() {
             transition={{ duration: 0.25 }}
           >
             {active === "overview" && <Overview />}
+            {active === "queries" && <QueriesAdmin />}
+            {active === "plans" && <PlansAdmin />}
+
             {active === "room" && <CreateRoom />}
             {active === "yt" && <AddYouTubeVideo />}
             {active === "custom" && <AddCustomVideo />}
@@ -143,9 +150,10 @@ export default function Dashboard() {
             {active === "mainsData" && <StudentMainsData />}
             {active === "dailyTestControl" && <DailyTestControl />} {/* ✅ New */}
             {active === "csatControl" && <CsatControl />}
-            {active === "queries" && <QueriesAdmin />}
             {active === "calendarControl" && <CalendarAdmin />}
             {active === "headlinesPdf" && <HeadlinesPdfGenerator />}
+            {active === "exclusiveNotes" && <ExclusiveNotesAdmin />}
+
 
 
 
@@ -1265,43 +1273,214 @@ function CurrentAffairsAdmin() {
 /* ---------------------------
    Components: Overview
 ----------------------------*/
+/* ---------------------------------------
+   PREMIUM ADMIN DASHBOARD OVERVIEW
+---------------------------------------- */
 function Overview() {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-        Quick Overview
-      </h2>
-      <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
-        Use the left tabs to create rooms, add videos, or manage resources.
-      </p>
+  const [stats, setStats] = useState({
+    studyRooms: 0,
+    videos: 0,
+    students: 0,
+    library: 0,
+    resources: 0,
+    dailyQuizzes: 0,
+    csatTests: 0,
+    mainsQuestions: 0,
+    currentAffairs: 0,
+    queriesPending: 0,
+    prelimsTests: 0,
+  });
 
-      <div className="grid md:grid-cols-3 gap-4">
-        <StatCard title="Study Rooms" collectionName="studyRooms" />
-        <StatCard title="Videos" collectionName="videos" />
-        <StatCard title="Students" collectionName="users" />
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // ⏰ Live clock update
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ✅ Fetch live Firestore data
+  useEffect(() => {
+    const unsubRooms = onSnapshot(collection(db, "studyRooms"), (snap) =>
+      setStats((s) => ({ ...s, studyRooms: snap.size }))
+    );
+    const unsubVideos = onSnapshot(collection(db, "videos"), (snap) =>
+      setStats((s) => ({ ...s, videos: snap.size }))
+    );
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) =>
+      setStats((s) => ({ ...s, students: snap.size }))
+    );
+    const unsubLib = onSnapshot(collection(db, "library"), (snap) =>
+      setStats((s) => ({ ...s, library: snap.size }))
+    );
+    const unsubRes = onSnapshot(collection(db, "resources"), (snap) =>
+      setStats((s) => ({ ...s, resources: snap.size }))
+    );
+    const unsubDaily = onSnapshot(collection(db, "dailyQuizzes"), (snap) =>
+      setStats((s) => ({ ...s, dailyQuizzes: snap.size }))
+    );
+    const unsubMains = onSnapshot(collection(db, "mainsQuestions"), (snap) =>
+      setStats((s) => ({ ...s, mainsQuestions: snap.size }))
+    );
+    const unsubCA = onSnapshot(collection(db, "currentAffairsPdfs"), (snap) =>
+      setStats((s) => ({ ...s, currentAffairs: snap.size }))
+    );
+
+    // ✅ FIXED Prelims Test Counter
+    // It will now automatically detect even deeply nested test collections
+    const unsubPrelims = onSnapshot(collectionGroup(db, "tests"), (snap) => {
+      const prelimsOnly = snap.docs.filter(
+        (doc) =>
+          doc.ref.path.toLowerCase().includes("prelims") ||
+          doc.ref.path.toLowerCase().includes("prelimstest") ||
+          (doc.data().examType && doc.data().examType.toLowerCase() === "prelims")
+      );
+      setStats((s) => ({ ...s, prelimsTests: prelimsOnly.length }));
+    });
+
+    const unsubCSAT = onSnapshot(collectionGroup(db, "csatQuizzes"), (snap) =>
+      setStats((s) => ({ ...s, csatTests: snap.size }))
+    );
+
+    const unsubQueries = onSnapshot(
+      query(collection(db, "queries"), where("status", "==", "pending")),
+      (snap) => setStats((s) => ({ ...s, queriesPending: snap.size }))
+    );
+
+    return () => {
+      unsubRooms();
+      unsubVideos();
+      unsubUsers();
+      unsubLib();
+      unsubRes();
+      unsubDaily();
+      unsubMains();
+      unsubCA();
+      unsubPrelims();
+      unsubCSAT();
+      unsubQueries();
+    };
+  }, []);
+
+  // 🕒 Formatted Date + Time
+  const formattedDate = currentTime.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const formattedTime = currentTime.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  return (
+    <div className="relative">
+      {/* Header Row with Animated Text + Time */}
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <motion.h2
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="text-3xl font-bold mb-2 text-cyan-400 flex items-center gap-2"
+          >
+            Hello Boss !
+          </motion.h2>
+
+          {/* ✨ Animated “Hello boss” line */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: [0.7, 1, 0.7],
+              textShadow: [
+                "0px 0px 4px #0ff",
+                "0px 0px 10px #00ffff",
+                "0px 0px 4px #0ff",
+              ],
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="text-lg text-cyan-300 font-semibold"
+          >
+           These are your updates.
+          </motion.p>
+        </div>
+
+        {/* 🕒 Date-Time block on right */}
+        <motion.div
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6 }}
+          className="text-right"
+        >
+          <p className="text-cyan-400 text-lg font-semibold tracking-wide border-b border-cyan-500/40 pb-1">
+            {formattedDate}
+          </p>
+          <p className="text-gray-300 text-xl font-bold mt-1">{formattedTime}</p>
+        </motion.div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <StatCard title="📚 Study Rooms" value={stats.studyRooms} />
+        <StatCard title="🎥 Videos" value={stats.videos} />
+        <StatCard title="👥 Students" value={stats.students} />
+        <StatCard title="📖 Library Files" value={stats.library} />
+        <StatCard title="🗂 Resources" value={stats.resources} />
+        <StatCard title="⚡ Daily Quizzes" value={stats.dailyQuizzes} />
+        <StatCard
+          title="🧮 Prelims Tests"
+          value={stats.prelimsTests}
+          highlight="yellow"
+        />
+        <StatCard title="📝 CSAT Tests" value={stats.csatTests} />
+        <StatCard title="✍️ Mains Questions" value={stats.mainsQuestions} />
+        <StatCard title="📰 Current Affairs PDFs" value={stats.currentAffairs} />
+        <StatCard
+          title="📩 Pending Queries"
+          value={stats.queriesPending}
+          highlight="red"
+        />
       </div>
     </div>
   );
 }
 
-function StatCard({ title, collectionName }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, collectionName), (snap) =>
-      setCount(snap.size)
-    );
-    return () => unsub();
-  }, [collectionName]);
+/* --------------------------------------
+   Reusable Stat Card Component
+--------------------------------------- */
+function StatCard({ title, value, highlight }) {
+  const colorMap = {
+    red: "text-red-400 border-red-500/50",
+    yellow: "text-yellow-400 border-yellow-500/50",
+    cyan: "text-cyan-400 border-cyan-500/50",
+  };
 
   return (
-    <div className="rounded-xl p-4 bg-white/70 dark:bg-white/10 border border-white/30">
-      <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-      <p className="text-3xl font-bold text-cyan-600 dark:text-cyan-400">
-        {count}
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className={`rounded-xl p-4 bg-gray-900/70 border ${
+        colorMap[highlight] || "border-cyan-500/40"
+      } shadow-md hover:shadow-cyan-400/20 transition-all`}
+    >
+      <p className="text-sm text-gray-400">{title}</p>
+      <p
+        className={`text-3xl font-bold ${
+          colorMap[highlight]?.split(" ")[0] || "text-cyan-400"
+        }`}
+      >
+        {value}
       </p>
-    </div>
+    </motion.div>
   );
 }
+
+
+
 
 /* ---------------------------
    Component: LibraryAdmin
@@ -2334,6 +2513,376 @@ function Th({ children }) {
 function Td({ children }) {
   return (
     <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{children}</td>
+  );
+}
+/*---------------------------Exclusive notes------------------------*/
+/* ---------------------------
+   Component: Exclusive Notes Admin
+----------------------------*/
+function ExclusiveNotesAdmin() {
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [msg, setMsg] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(null); // progress in %
+  const [uploading, setUploading] = useState(false);
+  const storage = getStorage();
+
+  // ✅ Fetch existing exclusive notes
+  useEffect(() => {
+    const q = query(collection(db, "exclusiveNotes"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) =>
+      setNotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
+
+  // ✅ Upload new note with progress
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    setMsg("");
+    if (!title || !file) {
+      setMsg("⚠️ Please provide a title and select a file.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const storagePath = `exclusive-notes/${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(fileRef, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          const progress =
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(Math.floor(progress));
+        },
+        (error) => {
+          console.error("Upload failed:", error);
+          setMsg("❌ Upload failed: " + error.message);
+          setUploading(false);
+        },
+        async () => {
+          // ✅ Upload complete
+          const fileUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          await addDoc(collection(db, "exclusiveNotes"), {
+            title,
+            fileName: file.name,
+            fileUrl,
+            storagePath,
+            createdAt: serverTimestamp(),
+          });
+
+          setMsg("✅ Exclusive Note uploaded successfully!");
+          setTitle("");
+          setFile(null);
+          setUploadProgress(null);
+          setUploading(false);
+        }
+      );
+    } catch (err) {
+      console.error(err);
+      setMsg("❌ Upload failed: " + err.message);
+      setUploading(false);
+    }
+  };
+
+  // ✅ Delete note
+  const handleDelete = async (note) => {
+    if (!window.confirm("Delete this exclusive note?")) return;
+    try {
+      if (note.storagePath) {
+        await deleteObject(ref(storage, note.storagePath));
+      }
+      await deleteDoc(doc(db, "exclusiveNotes", note.id));
+      setMsg("🗑️ Note deleted successfully.");
+    } catch (err) {
+      console.error("Delete failed:", err.message);
+      setMsg("❌ Delete failed: " + err.message);
+    }
+  };
+
+  return (
+    <div className="text-white">
+      <h2 className="text-xl font-bold mb-4 text-gray-100">👑 Manage Exclusive Notes</h2>
+
+      {/* Upload Form */}
+      <form
+        onSubmit={handleUpload}
+        className="flex flex-col gap-3 bg-gray-900 p-6 rounded-lg border border-cyan-700/30"
+      >
+        <input
+          type="text"
+          placeholder="Note Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="p-2 rounded bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-cyan-500 outline-none"
+        />
+        <input
+          type="file"
+          accept="application/pdf"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="p-2 text-gray-300"
+        />
+
+        <button
+          type="submit"
+          disabled={uploading}
+          className={`px-4 py-2 rounded text-white font-semibold transition ${
+            uploading
+              ? "bg-gray-600 cursor-not-allowed"
+              : "bg-cyan-600 hover:bg-cyan-700"
+          }`}
+        >
+          {uploading ? "Uploading..." : "Upload Note"}
+        </button>
+
+        {/* ✅ Upload progress bar */}
+        {uploading && (
+          <div className="w-full bg-gray-800 rounded-full h-3 mt-2 overflow-hidden relative">
+            <div
+              className="bg-cyan-500 h-3 transition-all duration-200"
+              style={{ width: `${uploadProgress || 0}%` }}
+            ></div>
+            <span className="absolute inset-0 text-center text-xs text-gray-300 font-medium">
+              {uploadProgress}% uploaded
+            </span>
+          </div>
+        )}
+
+        {msg && (
+          <p
+            className={`text-sm mt-2 ${
+              msg.startsWith("✅")
+                ? "text-green-400"
+                : msg.startsWith("❌")
+                ? "text-red-400"
+                : "text-cyan-400"
+            }`}
+          >
+            {msg}
+          </p>
+        )}
+      </form>
+
+      {/* Notes list */}
+      <div className="mt-6 space-y-3">
+        {notes.map((note) => (
+          <div
+            key={note.id}
+            className="flex items-center justify-between bg-gray-800/60 hover:bg-gray-800 transition p-3 rounded border border-gray-700"
+          >
+            <div>
+              <span className="text-white font-medium">{note.title}</span>
+              <p className="text-xs text-gray-400">{note.fileName}</p>
+            </div>
+            <div className="flex gap-2">
+              <a
+                href={note.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition"
+              >
+                View
+              </a>
+              <button
+                onClick={() => handleDelete(note)}
+                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+/*==============SUBSCRIPTION PRICES=============*/
+/* ---------------------------
+   Component: PlansAdmin
+----------------------------*/
+function PlansAdmin() {
+  const [plans, setPlans] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({
+    title: "",
+    price: "",
+    accent: "",
+    features: "",
+  });
+  const [msg, setMsg] = useState("");
+
+  // ✅ Fetch all plans in real-time
+  useEffect(() => {
+    const q = query(collection(db, "plans"));
+    const unsub = onSnapshot(q, (snap) =>
+      setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
+
+  // ✅ Handle Edit Click
+  const handleEdit = (plan) => {
+    setEditing(plan.id);
+    setForm({
+      title: plan.title,
+      price: plan.price,
+      accent: plan.accent || "",
+      features: plan.features ? plan.features.join("\n") : "",
+    });
+  };
+
+  // ✅ Save changes to Firestore
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      await setDoc(
+        doc(db, "plans", editing),
+        {
+          title: form.title,
+          price: form.price,
+          accent: form.accent,
+          features: form.features
+            .split("\n")
+            .map((f) => f.trim())
+            .filter(Boolean),
+        },
+        { merge: true }
+      );
+      setMsg("✅ Plan updated successfully!");
+      setEditing(null);
+    } catch (err) {
+      console.error(err);
+      setMsg("❌ Error: " + err.message);
+    }
+  };
+
+  return (
+    <div className="p-6 text-white min-h-screen">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="bg-gray-900 border border-cyan-600/40 rounded-xl p-6 shadow-lg mb-8"
+      >
+        <h2 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+          💎 Manage Subscription Plans
+        </h2>
+        <p className="text-sm text-gray-400">
+          Edit price, features, and style of each plan dynamically (used by user app popup)
+        </p>
+      </motion.div>
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {plans.map((plan) => (
+          <motion.div
+            key={plan.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gray-800 border border-gray-700 rounded-xl p-5 flex flex-col justify-between shadow-md"
+          >
+            <div>
+              <h3
+                className="text-xl font-semibold mb-2"
+                style={{ color: plan.accent || "#3b82f6" }}
+              >
+                {plan.title || "Untitled Plan"}
+              </h3>
+              <p className="text-gray-300 mb-2">{plan.price}</p>
+              <ul className="text-sm text-gray-400 list-disc pl-5">
+                {plan.features &&
+                  plan.features.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            </div>
+            <button
+              onClick={() => handleEdit(plan)}
+              className="mt-5 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg flex items-center justify-center gap-2 transition"
+            >
+              <FaEdit /> Edit
+            </button>
+          </motion.div>
+        ))}
+      </div>
+
+      {editing && (
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50"
+        >
+          <div className="bg-gray-900 border border-cyan-600/50 p-8 rounded-2xl shadow-2xl w-[90%] max-w-lg relative">
+            <button
+              onClick={() => setEditing(null)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-white"
+            >
+              <FaTimes size={18} />
+            </button>
+            <h3 className="text-xl font-bold text-cyan-400 mb-4">
+              ✏️ Editing: {editing}
+            </h3>
+            <form onSubmit={handleSave} className="space-y-4">
+              <input
+                type="text"
+                placeholder="Title"
+                value={form.title}
+                onChange={(e) =>
+                  setForm({ ...form, title: e.target.value })
+                }
+                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700"
+              />
+              <input
+                type="text"
+                placeholder="Price"
+                value={form.price}
+                onChange={(e) =>
+                  setForm({ ...form, price: e.target.value })
+                }
+                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700"
+              />
+              <input
+                type="text"
+                placeholder="Accent Color (#34D399)"
+                value={form.accent}
+                onChange={(e) =>
+                  setForm({ ...form, accent: e.target.value })
+                }
+                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700"
+              />
+              <textarea
+                placeholder="Features (one per line)"
+                value={form.features}
+                onChange={(e) =>
+                  setForm({ ...form, features: e.target.value })
+                }
+                rows={6}
+                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700"
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-2"
+                >
+                  <FaTimes /> Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-2"
+                >
+                  <FaSave /> Save
+                </button>
+              </div>
+            </form>
+            {msg && (
+              <p className="text-cyan-400 text-sm mt-4 text-center">{msg}</p>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </div>
   );
 }
 

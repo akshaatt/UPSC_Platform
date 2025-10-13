@@ -8,6 +8,7 @@ import AuthModal from "./AuthModal";
 import SubscriptionPopup from "./SubscriptionPopup";
 import ContactUsModal from "./ContactUsModal";
 import { motion, AnimatePresence } from "framer-motion";
+import { Crown } from "lucide-react";
 
 function Navbar() {
   const [user, setUser] = useState(null);
@@ -15,11 +16,11 @@ function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
-  const [isContactOpen, setIsContactOpen] = useState(false); // 👈 modal state
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const [exclusivePopup, setExclusivePopup] = useState(false);
   const [plan, setPlan] = useState(null);
   const navigate = useNavigate();
 
-  // Listen to auth + user doc
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -39,7 +40,6 @@ function Navbar() {
     return () => unsubAuth();
   }, []);
 
-  // close dropdown if clicked outside
   useEffect(() => {
     const closeDropdown = (e) => {
       if (!e.target.closest(".dropdown")) setDropdownOpen(false);
@@ -49,6 +49,22 @@ function Navbar() {
   }, []);
 
   const avatarSrc = user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR;
+
+  const scrollToSection = (id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  // 🔹 Handle Exclusive Notes click
+  const handleExclusiveClick = () => {
+    if (plan === "samarpan") {
+      navigate("/exclusive-notes");
+    } else {
+      setExclusivePopup(true);
+    }
+  };
 
   return (
     <nav className="bg-black shadow-md shadow-gray-800/40 fixed w-full top-0 z-50">
@@ -64,25 +80,24 @@ function Navbar() {
 
         {/* Links */}
         <div className="hidden md:flex space-x-8 text-white font-medium items-center">
-          <button
-            onClick={() => navigate("/services")}
-            className="hover:text-[#0090DE] transition"
-          >
-            Services
+          <button type="button" onClick={() => scrollToSection("studyRoomsPreview")} className="hover:text-[#0090DE] transition">
+            Rooms
+          </button>
+          <button type="button" onClick={() => scrollToSection("dailyExam")} className="hover:text-[#0090DE] transition">
+            Daily Quiz
           </button>
           <button
-            onClick={() => navigate("/downloads")}
-            className="hover:text-[#0090DE] transition"
+            type="button"
+            onClick={handleExclusiveClick}
+            className="flex items-center gap-2 hover:text-[#0090DE] transition"
           >
-            Downloads
+            <Crown size={16} /> Exclusive Notes
           </button>
-          <button
-            onClick={() => setIsContactOpen(true)} // ✅ open modal only
-            className="hover:text-[#0090DE] transition"
-          >
+          <button type="button" onClick={() => setIsContactOpen(true)} className="hover:text-[#0090DE] transition">
             Contact Us
           </button>
           <button
+            type="button"
             onClick={() => setIsSubscriptionOpen(true)}
             className="hover:text-[#0090DE] transition flex items-center gap-1"
           >
@@ -99,6 +114,7 @@ function Navbar() {
         {user ? (
           <div className="relative dropdown">
             <button
+              type="button"
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="flex items-center gap-2 text-white"
             >
@@ -114,7 +130,6 @@ function Navbar() {
               <span>▼</span>
             </button>
 
-            {/* Dropdown */}
             <AnimatePresence>
               {dropdownOpen && (
                 <motion.div
@@ -133,37 +148,16 @@ function Navbar() {
                     </div>
                   )}
 
-                  <button
-                    onClick={() => {
-                      navigate("/dashboard");
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
+                  <button onClick={() => { navigate("/dashboard"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
                     Dashboard
                   </button>
-                  <button
-                    onClick={() => {
-                      navigate("/profile");
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
+                  <button onClick={() => { navigate("/profile"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
                     Profile
                   </button>
-                  <button
-                    onClick={() => {
-                      navigate("/library");
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
+                  <button onClick={() => { navigate("/library"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
                     Library
                   </button>
-                  <button
-                    onClick={() => signOut(auth)}
-                    className="w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
+                  <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700">
                     Sign Out
                   </button>
                 </motion.div>
@@ -172,6 +166,7 @@ function Navbar() {
           </div>
         ) : (
           <button
+            type="button"
             onClick={() => setIsAuthOpen(true)}
             className="px-5 py-2 rounded-lg text-white font-medium"
             style={{ backgroundColor: "#0090DE" }}
@@ -183,14 +178,52 @@ function Navbar() {
 
       {/* Modals */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-      <SubscriptionPopup
-        isOpen={isSubscriptionOpen}
-        onClose={() => setIsSubscriptionOpen(false)}
-      />
-      <ContactUsModal
-        open={isContactOpen}
-        onClose={() => setIsContactOpen(false)}
-      />
+      <SubscriptionPopup isOpen={isSubscriptionOpen} onClose={() => setIsSubscriptionOpen(false)} />
+      <ContactUsModal open={isContactOpen} onClose={() => setIsContactOpen(false)} />
+
+      {/* Exclusive Popup */}
+      <AnimatePresence>
+        {exclusivePopup && (
+          <motion.div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 max-w-sm text-center"
+            >
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2">
+                🚀 Exclusive Feature
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                This feature is only available for <b>Samarpan Plan</b> users.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => setExclusivePopup(false)}
+                  className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setExclusivePopup(false);
+                    setIsSubscriptionOpen(true);
+                  }}
+                  className="px-4 py-2 bg-[#0090DE] hover:bg-[#007bbd] text-white rounded-lg"
+                >
+                  Upgrade Now
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 }
@@ -198,16 +231,11 @@ function Navbar() {
 /* Helper */
 function titleFromKey(key) {
   switch (key) {
-    case "lakshya":
-      return "Lakshya";
-    case "safalta":
-      return "Safalta";
-    case "shikhar":
-      return "Shikhar";
-    case "samarpan":
-      return "Samarpan";
-    default:
-      return "Unknown";
+    case "lakshya": return "Lakshya";
+    case "safalta": return "Safalta";
+    case "shikhar": return "Shikhar";
+    case "samarpan": return "Samarpan";
+    default: return "Unknown";
   }
 }
 

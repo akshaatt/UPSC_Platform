@@ -64,6 +64,7 @@ function ResourceCards() {
       link: "/resources/newspapers",
       needPlan: "Lakshya or higher",
     },
+    
   ];
 
   const handleClick = (card) => {
@@ -80,7 +81,7 @@ function ResourceCards() {
   return (
     <>
       {/* Cards Grid */}
-      <div className="mt-12 max-w-7xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
+      <div className="mt-12 max-w-9xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
         {cards.map((card, i) => (
           <motion.div
             key={card.title}

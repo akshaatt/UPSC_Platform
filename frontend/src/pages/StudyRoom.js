@@ -10,13 +10,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  Calendar,
-  Clock,
-  Video,
-  CheckCircle,
-  AlertCircle,
-} from "lucide-react";
+import { Calendar, Clock, Video, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function StudyRoom() {
@@ -45,19 +39,19 @@ export default function StudyRoom() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-slate-900 dark:to-slate-950 py-12 px-6 pt-24">
+    <div className="min-h-screen bg-gradient-to-b from-black via-[#0a0f1a] to-black py-12 px-6 pt-24">
       <div className="max-w-7xl mx-auto">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="text-4xl font-extrabold text-center bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent mb-12"
+          className="text-4xl font-extrabold text-center text-[#00c3ff] drop-shadow-[0_0_8px_#00c3ff66] mb-12"
         >
           Live Study Rooms
         </motion.h1>
 
         {rooms.length === 0 ? (
-          <p className="text-center text-gray-600 dark:text-gray-300">
+          <p className="text-center text-gray-400">
             No rooms available right now. Please check back later.
           </p>
         ) : (
@@ -80,7 +74,7 @@ export default function StudyRoom() {
 
 function RoomCard({ room, user, userDoc, index }) {
   const [popup, setPopup] = useState("");
-  const [step, setStep] = useState(0); // 0 = idle, 1 = confirm, 2 = terms
+  const [step, setStep] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [registered, setRegistered] = useState(false);
 
@@ -93,14 +87,12 @@ function RoomCard({ room, user, userDoc, index }) {
   if (diffMin <= 5 && diffMin > -120) status = "Live";
   if (diffMin <= -120) status = "Ended";
 
-  // Plans → max rooms
   const planLimits = { safalta: 8, shikhar: 20, samarpan: 60 };
   const plan = userDoc?.plan || "lakshya";
   const maxRooms = planLimits[plan] || 1;
   const usedRooms = userDoc?.usedRooms || 0;
   const roomsLeft = maxRooms - usedRooms;
 
-  // Check registration on mount
   useEffect(() => {
     if (!user) return;
     const checkRegistration = async () => {
@@ -116,34 +108,31 @@ function RoomCard({ room, user, userDoc, index }) {
       setPopup("⚠️ Please login to register.");
       return;
     }
-    setStep(1); // confirmation step
+    setStep(1);
   };
 
-  const confirmRegister = async () => {
+  const confirmRegister = () => {
     if (roomsLeft <= 0) {
       setPopup("❌ You have reached your plan limit.");
       return;
     }
-    setStep(2); // move to terms step
+    setStep(2);
   };
 
   const finalizeRegister = async () => {
     try {
-      // Mark registration in user subcollection
       await setDoc(doc(db, "users", user.uid, "registrations", room.id), {
         roomId: room.id,
         title: room.title,
         registeredAt: serverTimestamp(),
       });
 
-      // Increment usedRooms in user doc
       await setDoc(
         doc(db, "users", user.uid),
         { usedRooms: increment(1) },
         { merge: true }
       );
 
-      // ✅ Also add to global registrations collection for admin view
       await setDoc(doc(db, "registrations", `${room.id}_${user.uid}`), {
         roomId: room.id,
         uid: user.uid,
@@ -166,10 +155,12 @@ function RoomCard({ room, user, userDoc, index }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.1 }}
       whileHover={{ scale: 1.03, y: -4 }}
-      className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl hover:shadow-2xl transition overflow-hidden flex flex-col min-h-[340px]"
+      className="relative bg-[#0d1117] border border-[#00c3ff33] rounded-2xl 
+                 shadow-[0_0_12px_#00c3ff22] hover:shadow-[0_0_20px_#00c3ff44] 
+                 transition overflow-hidden flex flex-col min-h-[340px]"
     >
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-5 text-white flex items-center justify-between">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-[#00c3ff] to-[#007bbd] p-5 text-black font-semibold flex items-center justify-between">
         <h2 className="text-lg font-bold truncate">{room.title}</h2>
         <span
           className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -177,7 +168,7 @@ function RoomCard({ room, user, userDoc, index }) {
               ? "bg-yellow-400 text-black"
               : status === "Live"
               ? "bg-green-500 text-white animate-pulse"
-              : "bg-gray-400 text-black"
+              : "bg-gray-500 text-white"
           }`}
         >
           {status}
@@ -186,12 +177,10 @@ function RoomCard({ room, user, userDoc, index }) {
 
       {/* Body */}
       <div className="p-6 flex-1 flex flex-col">
-        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 line-clamp-4">
-          {room.description}
-        </p>
+        <p className="text-sm text-gray-300 mb-4 line-clamp-4">{room.description}</p>
 
         {/* Date & Time */}
-        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <div className="flex items-center gap-4 text-sm text-gray-400 mb-6">
           <span className="flex items-center gap-1">
             <Calendar size={16} /> {room.date}
           </span>
@@ -205,7 +194,7 @@ function RoomCard({ room, user, userDoc, index }) {
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={handleRegisterClick}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold shadow hover:opacity-90 transition"
+            className="w-full py-3 rounded-xl bg-[#00c3ff] text-black font-semibold shadow-[0_0_10px_#00c3ff66] hover:brightness-110 transition"
           >
             Register
           </motion.button>
@@ -214,7 +203,7 @@ function RoomCard({ room, user, userDoc, index }) {
         {status === "Upcoming" && registered && (
           <button
             disabled
-            className="w-full py-3 rounded-xl bg-gray-400 text-white cursor-not-allowed"
+            className="w-full py-3 rounded-xl bg-gray-600 text-gray-300 cursor-not-allowed"
           >
             Link active 5 mins before start
           </button>
@@ -225,7 +214,7 @@ function RoomCard({ room, user, userDoc, index }) {
             href={room.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-auto w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold shadow hover:opacity-90 transition"
+            className="mt-auto w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-green-500 text-white font-semibold hover:brightness-110 transition"
           >
             <Video size={18} /> Join Meeting
           </a>
@@ -234,7 +223,7 @@ function RoomCard({ room, user, userDoc, index }) {
         {status === "Ended" && (
           <button
             disabled
-            className="w-full py-3 rounded-xl bg-gray-300 text-gray-700 cursor-not-allowed"
+            className="w-full py-3 rounded-xl bg-gray-700 text-gray-400 cursor-not-allowed"
           >
             Room Ended
           </button>
@@ -242,19 +231,19 @@ function RoomCard({ room, user, userDoc, index }) {
 
         {/* Step Popups */}
         {step === 1 && (
-          <div className="mt-4 p-4 border rounded-lg bg-yellow-50 text-sm">
+          <div className="mt-4 p-4 border border-[#00c3ff33] rounded-lg bg-[#0a0f1a] text-sm text-gray-200">
             Are you sure you want to register? <br />
             Rooms left: {roomsLeft}
             <div className="mt-3 flex gap-3">
               <button
                 onClick={confirmRegister}
-                className="px-4 py-2 rounded-lg bg-cyan-600 text-white"
+                className="px-4 py-2 rounded-lg bg-[#00c3ff] text-black"
               >
                 Yes
               </button>
               <button
                 onClick={() => setStep(0)}
-                className="px-4 py-2 rounded-lg bg-gray-300"
+                className="px-4 py-2 rounded-lg bg-gray-600 text-gray-200"
               >
                 No
               </button>
@@ -263,9 +252,9 @@ function RoomCard({ room, user, userDoc, index }) {
         )}
 
         {step === 2 && (
-          <div className="mt-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900 text-sm">
+          <div className="mt-4 p-4 border border-[#00c3ff33] rounded-lg bg-[#0a0f1a] text-sm text-gray-200">
             <p className="font-medium mb-2">📜 Terms & Conditions</p>
-            <ul className="list-disc ml-5 text-xs space-y-1">
+            <ul className="list-disc ml-5 text-xs space-y-1 text-gray-400">
               <li>Obey instructor’s rules</li>
               <li>Be calm and respectful</li>
               <li>Violation = removal + 5 rooms deducted</li>
@@ -285,14 +274,14 @@ function RoomCard({ room, user, userDoc, index }) {
                 className={`px-4 py-2 rounded-lg ${
                   termsAccepted
                     ? "bg-green-600 text-white"
-                    : "bg-gray-300 text-gray-600 cursor-not-allowed"
+                    : "bg-gray-600 text-gray-400 cursor-not-allowed"
                 }`}
               >
                 Confirm & Register
               </button>
               <button
                 onClick={() => setStep(0)}
-                className="px-4 py-2 rounded-lg bg-gray-300"
+                className="px-4 py-2 rounded-lg bg-gray-600 text-gray-300"
               >
                 Cancel
               </button>
@@ -306,7 +295,7 @@ function RoomCard({ room, user, userDoc, index }) {
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
-            className="mt-4 text-sm text-green-600 dark:text-green-400 flex items-center gap-1"
+            className="mt-4 text-sm text-green-400 flex items-center gap-1"
           >
             <CheckCircle size={14} /> {popup}
           </motion.p>
@@ -315,7 +304,7 @@ function RoomCard({ room, user, userDoc, index }) {
 
       {/* Footer countdown */}
       {status === "Upcoming" && (
-        <div className="absolute bottom-3 right-3 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+        <div className="absolute bottom-3 right-3 text-xs text-gray-400 flex items-center gap-1">
           <AlertCircle size={12} /> Starts at {room.time}
         </div>
       )}

@@ -49,6 +49,7 @@ import MainsTab from "./pages/MainsTab";
 import DailyQuiz from "./pages/DailyQuiz";
 import Csat from "./pages/Csat";
 import AboutUPSC from "./pages/AboutUPSC";
+import ExclusiveNotes from "./pages/ExclusiveNotes";
 
 
 
@@ -190,6 +191,7 @@ function AppWrapper() {
         <Route path="/study-rooms" element={<StudyRoom />} />
         <Route path="/current-affairs" element={<CurrentAffairs />} />
         <Route path="/csat-tests" element={<Csat />} />
+         <Route path="/exclusive-notes" element={<ExclusiveNotes />} />
 
         {/* Protected */}
         <Route

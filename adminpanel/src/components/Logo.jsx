@@ -9,7 +9,7 @@ export default function Logo({ size = 28 }) {
           <ShieldCheck size={size} />
         </div>
       </div>
-      <span className="font-semibold tracking-wide grad-text">Admin Panel</span>
+      <span className="font-semibold tracking-wide grad-text">THURSDAY</span>
     </div>
   );
 }
