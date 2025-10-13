@@ -5,25 +5,36 @@ import { useNavigate } from "react-router-dom";
 import {
   doc,
   onSnapshot,
+  getDoc,
   setDoc,
   serverTimestamp,
-  getDoc,
+  updateDoc,
 } from "firebase/firestore";
 import {
   ref as storageRef,
   uploadBytesResumable,
   getDownloadURL,
+  uploadBytes,
+  ref,
 } from "firebase/storage";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaClock, FaCrown, FaPhoneAlt, FaHome, FaUpload, FaCheckCircle } from "react-icons/fa";
+import {
+  FaClock,
+  FaCrown,
+  FaPhoneAlt,
+  FaHome,
+  FaUpload,
+  FaCheckCircle,
+} from "react-icons/fa";
 
-// Helper for plan durations
+// Plan durations (days)
 const PLAN_DURATION = {
-  safalta: 30, // days
-  shikhar: 150, // 5 months
-  samarpan: 365, // 1 year
+  safalta: 30,
+  shikhar: 150,
+  samarpan: 365,
 };
 
+// Calculate expiry date
 function calcExpiry(startDate, plan) {
   if (!startDate || !plan) return null;
   const d = new Date(startDate.toDate());
@@ -32,132 +43,157 @@ function calcExpiry(startDate, plan) {
 }
 
 export default function Profile() {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [userDoc, setUserDoc] = useState(null);
-  const [dailyTime, setDailyTime] = useState(0); // seconds
-
-  // Upload state
+  const [userData, setUserData] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [showSavedPopup, setShowSavedPopup] = useState(false);
-  const [userData, setUserData] = useState(null);
-  // Track auth + userDoc
-  const navigate = useNavigate();
+  const [dailyTime, setDailyTime] = useState(0);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  // ✅ Get logged-in user and their Firestore data
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      console.log(user, "user from profile");
-      
-      if (user) {
-        const data = await fetchUserData(user.uid);
-        console.log(data, "data");
-        
-        setUserData(data);
+    const unsub = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        const data = await fetchUserData(currentUser.uid);
+        setUserData({ uid: currentUser.uid, ...data });
       } else {
         setUserData(null);
       }
     });
     return () => unsub();
-  }, [])
+  }, []);
 
+  // ✅ Fetch Firestore user document
   async function fetchUserData(uid) {
     try {
       const userRef = doc(db, "users", uid);
       const userSnap = await getDoc(userRef);
-
       if (userSnap.exists()) {
-        const data = userSnap.data();
-        console.log("User Firestore Data:", data);
-        return data;
+        return userSnap.data();
       } else {
-        console.log("No such user document!");
-        return null;
+        console.log("No user document found!");
+        return {};
       }
     } catch (err) {
       console.error("Error fetching user:", err);
-      return null;
+      return {};
     }
   }
 
-  console.log(userData, "UserData from user");
 
- 
+    const handleFileChange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return; 
+      setSelectedFile(file);
+      setPreview(URL.createObjectURL(file));
+    };
+
+    const handleUpload = async () => {
+      if (!selectedFile) return;
+      const formData = new FormData();
+      formData.append("image", selectedFile);
+      try {
+        const userRef = doc(db, "users", userData?.uid);  
+        await updateDoc(userRef, { photoURL: preview.toString() });
+        // const storageRef = ref(storage, `images/${selectedFile.name}`);
+        // await uploadBytes(storageRef, selectedFile);
+        // const url = await getDownloadURL(storageRef);
+        // console.log("Uploaded file URL:", url);
+        // const response = await axios.post("https://your-api.com/upload", formData, {
+        //   headers: {
+        //     "Content-Type": "multipart/form-data",
+        //   },
+        // });
+        // console.log("Upload successful", response.data);
+      } catch (error) {
+        console.error("Upload error", error);
+      }
+    };
+  
+    // const handleUpload = async () => {
+    //   if (!selectedFile) return;
+    //   const storageRef = ref(storage, `images/${selectedFile.name}`);
+    //   await uploadBytes(storageRef, selectedFile);
+    //   const url = await getDownloadURL(storageRef);
+    //   console.log("Uploaded file URL:", url);
+    // };
 
 
-  // Load today’s usage from Firestore when user logs in
-  // useEffect(() => {
-  //   if (!user) return;
-  //   const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
 
-  //   const fetchAndListen = async () => {
-  //     const snap = await getDoc(ref);
-  //     if (snap.exists()) {
-  //       setDailyTime(snap.data().seconds || 0);
-  //     } else {
-  //       setDailyTime(0);
-  //     }
+  
+// const onFileChange = async (e) => {
+//   if (!user) return alert("User not logged in");
 
-  //     // live listener
-  //     onSnapshot(ref, (docSnap) => {
-  //       if (docSnap.exists()) {
-  //         setDailyTime(docSnap.data().seconds || 0);
-  //       }
-  //     });
-  //   };
+//   const file = e.target.files?.[0];
+//   console.log(file, "file here");
+//   if (!file) return;
 
-  //   fetchAndListen();
-  // }, [user]);
+//   if (!file.type.startsWith("image/")) {
+//     alert("Please select an image file (jpg, png, webp)");
+//     return;
+//   }
 
-  // Increment timer every second + save to Firestore
-  // useEffect(() => {
-  //   if (!user) return;
-  //   const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
+//   try {
+//     setUploading(true);
+//     setUploadPct(0);
 
-  //   const interval = setInterval(() => {
-  //     setDailyTime((prev) => {
-  //       const updated = prev + 1;
+//     const ext = file.name.split(".").pop() || "jpg";
+//     var storageRef = firebase.storage().ref('profilePictures/' + file.name);
 
-  //       setDoc(
-  //         ref,
-  //         {
-  //           uid: user.uid,
-  //           date: todayKey(),
-  //           seconds: updated,
-  //           updatedAt: serverTimestamp(),
-  //         },
-  //         { merge: true }
-  //       );
+//     var task = storageRef.put(file);
 
-  //       return updated;
-  //     });
-  //   }, 1000);
+//     var user = firebase.auth().currentUser;    
+// //     const fileRef = storageRef(storage, `avatars/${user.uid}.${ext}`);
+// //     const uploadTask = uploadBytesResumable(fileRef, file);
+// // firebase.storage().ref('profilePictures/' + file.name);
+//     uploadTask.on(
+//       "state_changed",
+//       (snapshot) => {
+//         const pct = Math.round(
+//           (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+//         );
+//         setUploadPct(pct);
+//       },
+//       (error) => {
+//         console.error("Upload error:", error);
+//         alert("Upload failed. Please try again.");
+//       }
+//     );
 
-  //   return () => clearInterval(interval);
-  // }, [user]);
+//     await uploadTask;
+//     const url = await getDownloadURL(fileRef);
 
-  if (!userData) {
-    return (
-      <div className="pt-24 flex justify-center items-center min-h-screen">
-        <p className="text-gray-500">Please login to view profile.</p>
-      </div>
-    );
-  }
+//     // Firebase Auth profile update
+//     await updateProfile(user, { photoURL: url });
 
-  const plan = userDoc?.plan;
-  const planStart = userDoc?.planStart;
-  const expiryDate = calcExpiry(planStart, plan);
+//     // Firestore update
+//     await setDoc(
+//       doc(db, "users", user.uid),
+//       { photoURL: url, updatedAt: serverTimestamp() },
+//       { merge: true }
+//     );
 
-  const avatarSrc = userDoc?.photoURL || userData?.photoURL || DEFAULT_AVATAR;
+//     setUserData((prev) => ({ ...prev, photoURL: url }));
+//     setShowSavedPopup(true);
+//     setTimeout(() => setShowSavedPopup(false), 1800);
+//   } finally {
+//     setUploading(false);
+//     setUploadPct(0);
+//   }
+// };
 
+  // ✅ Handle profile photo upload
   // const onFileChange = async (e) => {
-  //   if (!userData || !userData.uid) {
-  //     alert("User not loaded yet!");
-  //     return;
-  //   }
+  //   if (!user) return alert("User not logged in");
 
   //   const file = e.target.files?.[0];
   //   if (!file) return;
+
   //   if (!file.type.startsWith("image/")) {
-  //     alert("Please select an image file (jpg, png, webp).");
+  //     alert("Please select an image file (jpg, png, webp)");
   //     return;
   //   }
 
@@ -166,26 +202,31 @@ export default function Profile() {
   //     setUploadPct(0);
 
   //     const ext = file.name.split(".").pop() || "jpg";
-  //     const ref = storageRef(storage, `avatars/${userData.uid}.${ext}`);
+  //     const storageReference = storageRef(storage, `avatars/${user.uid}.${ext}`);
 
-  //     const task = uploadBytesResumable(ref, file);
-  //     task.on("state_changed", (snap) => {
-  //       const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+  //     const uploadTask = uploadBytesResumable(storageReference, file);
+
+  //     uploadTask.on("state_changed", (snapshot) => {
+  //       const pct = Math.round(
+  //         (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+  //       );
   //       setUploadPct(pct);
   //     });
 
-  //     await task;
-  //     const url = await getDownloadURL(ref);
+  //     await uploadTask;
+  //     const url = await getDownloadURL(storageReference);
 
-  //     await updateProfile(userData, { photoURL: url });
+  //     // Update Firebase Auth profile
+  //     await updateProfile(user, { photoURL: url });
+
+  //     // Update Firestore
   //     await setDoc(
-  //       doc(db, "users", userData.uid),
+  //       doc(db, "users", user.uid),
   //       { photoURL: url, updatedAt: serverTimestamp() },
   //       { merge: true }
   //     );
 
-  //     setUserDoc((prev) => ({ ...prev, photoURL: url }));
-
+  //     setUserData((prev) => ({ ...prev, photoURL: url }));
   //     setShowSavedPopup(true);
   //     setTimeout(() => setShowSavedPopup(false), 1800);
   //   } catch (err) {
@@ -197,76 +238,36 @@ export default function Profile() {
   //   }
   // };
 
-  function handleLogout() {
-      signOut(auth)
-        .then(() => {
-          console.log("User signed out successfully");
-          setUser(null);
-          navigate("/");
-        })
-        .catch((error) => {
-          console.error("Error signing out:", error);
-        });
-    }
+  // ✅ Handle logout
   
-  const onFileChange = async (e) => {
-    console.log(e, userData, "fcghvjbkn");
-    
-    // if (!userData || !userData.uid) return;
-
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file (jpg, png, webp).");
-      return;
-    }
-
-    try {
-      setUploading(true);
-      setUploadPct(0);
-
-      const ext = file.name.split(".").pop() || "jpg";
-      const storageReference = storageRef(storage, `avatars/${userData.uid}.${ext}`);
-
-      const uploadTask = uploadBytesResumable(storageReference, file);
-
-      uploadTask.on("state_changed", (snapshot) => {
-        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-        setUploadPct(pct);
+  function handleLogout() {
+    signOut(auth)
+      .then(() => {
+        console.log("User signed out successfully");
+        navigate("/");
+      })
+      .catch((error) => {
+        console.error("Error signing out:", error);
       });
+  }
 
-      await uploadTask;
-      const url = await getDownloadURL(storageReference);
+  if (!userData) {
+    return (
+      <div className="pt-24 flex justify-center items-center min-h-screen">
+        <p className="text-gray-500">Please login to view profile.</p>
+      </div>
+    );
+  }
 
-      // Update Firebase Auth profile
-      await updateProfile(userData, { photoURL: url });
+  const plan = userData?.plan;
+  const planStart = userData?.planStart;
+  const expiryDate = calcExpiry(planStart, plan);
+  const avatarSrc = userData?.photoURL || DEFAULT_AVATAR;
 
-      // Update Firestore user doc
-      await setDoc(
-        doc(db, "users", userData.uid),
-        { photoURL: url, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-
-      // Update local state so image shows immediately
-      setUserDoc((prev) => ({ ...prev, photoURL: url }));
-
-      setShowSavedPopup(true);
-      setTimeout(() => setShowSavedPopup(false), 1800);
-    } catch (err) {
-      console.error("Upload error:", err);
-      alert("Failed to upload image. Please try again.");
-    } finally {
-      setUploading(false);
-      setUploadPct(0);
-    }
-  };
-  console.log(userDoc, "userDoc here see");
-
+  console.log(userData, "UserData from user");
+  
   return (
     <div className="relative bg-gray-50 dark:bg-gray-900 min-h-screen">
-      {/* Banner */}
       <div className="relative h-56 w-full overflow-hidden bg-gradient-to-br from-[#0090DE] to-[#001726]">
         <motion.div
           className="absolute -bottom-20 left-10 w-72 h-72 bg-white/20 rounded-full blur-3xl"
@@ -281,111 +282,75 @@ export default function Profile() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 -mt-24">
-        {/* Profile Card */}
         <motion.div
           className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 relative overflow-visible"
           initial={{ y: 16, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6 }}
         >
-          {/* Avatar + Upload */}
           <div className="flex flex-col items-center -mt-16">
             <motion.img
-              src={avatarSrc}
+              src={preview || avatarSrc}
               alt="Profile"
               className="w-32 h-32 rounded-full border-4 border-white dark:border-gray-800 object-cover shadow-lg"
-              onError={(e) => {
-                e.currentTarget.src = DEFAULT_AVATAR;
-              }}
-              whileHover={{ scale: 1.05, rotate: 1.5 }}
-              transition={{ type: "spring", stiffness: 220 }}
+              onError={(e) => (e.currentTarget.src = DEFAULT_AVATAR)}
+              whileHover={{ scale: 1.05 }}
             />
-
-            {/* Upload control */}
-            <label className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-full cursor-pointer hover:brightness-110 transition">
+            {/* <label className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-full cursor-pointer hover:brightness-110 transition">
               <FaUpload />
-              <span>Upload New Photo</span>
-              <input type="file" accept="image/*" className="hidden" onChange={onFileChange} disabled={!userData}
-                // disabled={!userData || uploading}
-                // disabled={!userData}
-              />
-            </label>
+              <input type="file" accept="image/*" onChange={handleFileChange} />
+      {/* {preview && <img src={preview} alt="preview" width="200" />} */}
+              {/* <button onClick={handleUpload}>Upload</button> */}
+              
+              {/* <span>Upload New Photo</span> */}
+              {/* <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onFileChange}
+                disabled={uploading}
+              /> */}
+            {/* </label> */}
 
             {uploading && <p>Uploading: {uploadPct}%</p>}
-      {showSavedPopup && <p className="text-green-600">Uploaded successfully!</p>}
-
-      {userData?.photoURL && (
-        <img src={userData.photoURL} alt="Profile" className="mt-4 w-24 h-24 rounded-full object-cover" />
-      )}
-            {/* {uploading && (
-              <div className="mt-2 w-56 h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#0090DE] transition-all"
-                  style={{ width: `${uploadPct}%` }}
-                />
-              </div>
-            )} */}
+            {showSavedPopup && (
+              <p className="text-green-600">Uploaded successfully!</p>
+            )}
 
             <h1 className="mt-4 text-2xl font-bold text-gray-800 dark:text-white">
-              {userData.displayName || userData?.firstName || "User"}
+              {userData.displayName || userData.name || "User"}
             </h1>
-            <p className="text-gray-500 dark:text-gray-400">{userData.email}</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              {userData.email || "No email"}
+            </p>
 
-            {/* Subscription Plan */}
             {plan && (
               <div className="mt-3 px-4 py-1 rounded-full text-sm font-semibold shadow-sm flex items-center gap-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-gray-800 dark:text-gray-200">
                 <FaCrown className="text-yellow-500" />
                 {plan.charAt(0).toUpperCase() + plan.slice(1)} Plan
               </div>
             )}
-
-            {/* <button
-              onClick={handleLogout}
-              className="mt-4 px-5 py-2 bg-[#0090DE] text-white rounded-full hover:bg-[#007bbd] transition"
-            >
-              Sign Out
-            </button> */}
           </div>
 
           {/* Details */}
           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
-                <FaPhoneAlt /> Phone Number
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userData?.phoneNumber || "Not added"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
-                <FaHome /> Address
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userData?.address || "Not added"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                Plan Start Date
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userData?.planStart
+            <InfoCard icon={<FaPhoneAlt />} title="Phone Number" value={userData.phone} />
+            <InfoCard icon={<FaHome />} title="Address" value={userData.address} />
+            <InfoCard
+              title="Plan Start Date"
+              value={
+                userData.planStart
                   ? userData.planStart.toDate().toDateString()
-                  : "Not available"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                Plan Expiry Date
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {expiryDate ? expiryDate.toDateString() : "Not available"}
-              </p>
-            </div>
+                  : "Not available"
+              }
+            />
+            <InfoCard
+              title="Plan Expiry Date"
+              value={expiryDate ? expiryDate.toDateString() : "Not available"}
+            />
           </div>
 
-          {/* Daily Usage Tracker */}
+          {/* Daily Usage */}
           <div className="mt-8 p-6 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-gray-700 dark:to-gray-800 rounded-xl shadow-lg text-center">
             <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 flex items-center justify-center gap-2">
               <FaClock /> Daily Usage Time
@@ -393,14 +358,10 @@ export default function Profile() {
             <p className="mt-2 text-2xl font-bold text-[#0090DE] font-mono">
               {formatDuration(dailyTime)}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Tracked from 00:00 hrs – 24:00 hrs
-            </p>
           </div>
         </motion.div>
       </div>
 
-      {/* Saved popup */}
       <AnimatePresence>
         {showSavedPopup && (
           <motion.div
@@ -431,13 +392,18 @@ export default function Profile() {
   );
 }
 
-/* helpers */
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(d.getDate()).padStart(2, "0")}`;
+// Helper UI component
+function InfoCard({ icon, title, value }) {
+  return (
+    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
+      <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+        {icon} {title}
+      </h3>
+      <p className="text-gray-800 dark:text-white font-medium">
+        {value || "Not added"}
+      </p>
+    </div>
+  );
 }
 
 function formatDuration(seconds) {

@@ -19,6 +19,9 @@ function Navbar() {
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false); 
   const [plan, setPlan] = useState(null);
+  // const [isAuthOpen, setIsAuthOpen] = useState(false);
+const [isOtpOpen, setIsOtpOpen] = useState(false);
+const [pendingOtpUser, setPendingOtpUser] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,13 +33,14 @@ function Navbar() {
         setUserDoc(null);
         setPlan(null);
         setIsOtpPopup(false);
+        sessionStorage.removeItem("otpShown");
         return;
       }
 
       const ref = doc(db, "users", u.uid);
       const unsubDoc = onSnapshot(ref, (snap) => {
         const data = snap.exists() ? snap.data() : null;
-console.log(data, "userData check ");
+         console.log(data, "userData check ");
 
         if (data?.isVerified) {
           // only set if verified
@@ -44,13 +48,19 @@ console.log(data, "userData check ");
           setUserDoc(data);
           setPlan(data?.plan || null);
           setIsOtpPopup(false);
+          sessionStorage.removeItem("otpShown");
         } else {
-          console.log("unverified");
-          
+          console.log("unverified", sessionStorage.getItem("otpShown"));
+          if (!sessionStorage.getItem("otpShown")) {
+            console.log("yes hit here");
+            
+            setIsOtpPopup(true);
+            sessionStorage.setItem("otpShown", "true");
+          }
           setUser(null);
           setUserDoc(data);
           setPlan(null);
-          setIsOtpPopup(true); 
+          // setIsOtpPopup(false); 
         }
       });
 
@@ -81,6 +91,7 @@ console.log(data, "userData check ");
   }, []);
 
   const avatarSrc = user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR;
+console.log ( "avatarSrc");
 
   return (
     <nav className="bg-black shadow-md shadow-gray-800/40 fixed w-full top-0 z-50">
@@ -214,8 +225,22 @@ console.log(data, "userData check ");
         )}
       </div>
 
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onOtpRequest={(user) => { setPendingOtpUser(user); setIsOtpOpen(true); setIsAuthOpen(false); }}
+        onLogin={(user) => { setUser(user); }}
+      />
+
+      <OtpPopup
+        isOpen={isOtpOpen}
+        onClose={() => { setIsOtpOpen(false); setPendingOtpUser(null); }}
+        pendingUser={pendingOtpUser}
+        onVerified={(user) => { setUser(user); /* maybe reload userDoc snapshot */ }}
+      />
+
       {/* Modals */}
-      {isAuthOpen && (
+      {/* {isAuthOpen && (
         <AuthModal
           isOpen={isAuthOpen}
           onClose={() => setIsAuthOpen(false)}
@@ -229,7 +254,7 @@ console.log(data, "userData check ");
           onClose={() => setIsOtpPopup(false)}
           userData={{ setUser }}
         />
-      )}
+      )} */}
 
       <SubscriptionPopup
         isOpen={isSubscriptionOpen}
