@@ -1,7 +1,7 @@
 // src/components/AuthModal.jsx
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { auth, db, app } from "../firebase"; 
+import { auth, db, app } from "../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -11,8 +11,7 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-// import { app } from "../firebase";
-
+import { FcGoogle } from "react-icons/fc";
 
 export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -23,7 +22,7 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confrmPass, setConfrmPass] = useState("");
-  const [closing, setClosing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const functions = getFunctions(app);
 
   if (!isOpen) return null;
@@ -32,16 +31,25 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
     setName("");
     setEmail("");
     setPassword("");
+    setConfrmPass("");
+    setPhone("");
+    setAddress("");
+    setErrorMsg("");
     setLoading(false);
   };
 
   const handleRegister = async () => {
+    if (isRegister && password !== confrmPass) {
+      setErrorMsg("Passwords do not match");
+      return;
+    }
+
     try {
       setLoading(true);
+      setErrorMsg("");
       const res = await createUserWithEmailAndPassword(auth, email, password);
-      if (name) {
-        await updateProfile(res.user, { displayName: name });
-      }
+      if (name) await updateProfile(res.user, { displayName: name });
+
       await setDoc(doc(db, "users", res.user.uid), {
         name: name || "",
         email,
@@ -55,15 +63,21 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
         isVerified: false,
         createdAt: serverTimestamp(),
       });
-      // request OTP (cloud function)
-      const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
-      await reqOtp({ uid: res.user.uid });
-      // tell parent to open OTP popup (parent should pass onOtpRequest)
+
+      // Non-blocking OTP call
+      try {
+        const reqOtp = httpsCallable(functions, "requestSignupOtpV1");
+        reqOtp({ uid: res.user.uid }).catch((e) =>
+          console.error("OTP request failed:", e)
+        );
+      } catch (fnErr) {
+        console.error("OTP callable error:", fnErr);
+      }
+
       if (onOtpRequest) onOtpRequest(res.user);
       clear();
     } catch (err) {
-      console.error("Register error:", err);
-      alert(err?.message || "Registration failed");
+      setErrorMsg(err?.message || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -73,27 +87,14 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
     try {
       setLoading(true);
       const res = await signInWithEmailAndPassword(auth, email, password);
-      // if user exists, parent should handle onLogin (set state)
       if (onLogin) onLogin(res.user);
       clear();
       onClose();
     } catch (err) {
-      console.error("Login error:", err);
-      alert(err?.message || "Login failed");
+      setErrorMsg(err?.message || "Login failed");
     } finally {
       setLoading(false);
     }
-  };
-
-  const triggerClose = () => {
-    if (showOtpPopup) return;
-    setClosing(true);
-    onClose();
-    setTimeout(() => {
-      // console.log("onclose bbfjfjhfd", onClose);
-      setClosing(false);
-      // onClose();
-    }, 500);
   };
 
   const handleGoogle = async () => {
@@ -101,15 +102,15 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
       setLoading(true);
       const provider = new GoogleAuthProvider();
       const res = await signInWithPopup(auth, provider);
-      // ensure user doc exists
       const u = res.user;
+
       await setDoc(
         doc(db, "users", u.uid),
         {
           name: u.displayName || "",
           email: u.email || "",
           photoURL: u.photoURL || null,
-          isVerified: true, // google signins we can mark verified or keep business rule
+          isVerified: true,
           createdAt: serverTimestamp(),
         },
         { merge: true }
@@ -118,60 +119,180 @@ export default function AuthModal({ isOpen, onClose, onOtpRequest, onLogin }) {
       clear();
       onClose();
     } catch (err) {
-      console.error("Google sign-in error:", err);
-      alert(err?.message || "Google sign-in failed");
+      setErrorMsg(err?.message || "Google sign-in failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const neonBg = "bg-[#070708]";
+  const neonBorder = "ring-1 ring-[#003a5a]/30";
+  const neonGlow = "shadow-[0_6px_24px_rgba(0,144,222,0.15)]";
+  const blueText = "text-[#00a0ff]";
+
+  // --- Thanos Dust Effect (on exit) ---
+  const dustEffect = {
+    exit: {
+      opacity: [1, 0],
+      filter: [
+        "blur(0px)",
+        "blur(1px)",
+        "blur(3px)",
+        "blur(8px)",
+        "blur(15px)",
+      ],
+      scale: [1, 1.05, 0.9, 0.7, 0.3],
+      transition: { duration: 1.2, ease: "easeInOut" },
+    },
+  };
+
   return (
     <AnimatePresence>
-      <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      //  onClick={() => {
-      //   if (!showOtpPopup) triggerClose();
-      //   }}
-      >
-        <motion.div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-[92%] max-w-md text-center"
-          initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} transition={{ duration: 0.3 }}
-          onClick={(e) => e.stopPropagation()}
-              >
-          <button onClick={onClose} className="absolute top-3 right-3">✕</button>
-          <h3 className="text-xl font-semibold mb-3">{isRegister ? "Create account" : "Sign in"}</h3>
-
-          {isRegister && (
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="w-full mb-2 p-2 rounded border" />
-          )}
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full mb-2 p-2 rounded border" />
-          {isRegister && (<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="PhoneNumber" className="w-full mb-2 p-2 rounded border" />
-          )}
-           {isRegister&&(<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="w-full mb-2 p-2 rounded border" />
-          )}
-         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full mb-4 p-2 rounded border" />
-          {isRegister && (<input type="password" value={confrmPass} onChange={(e) => setConfrmPass(e.target.value)} placeholder="Confirm Password" className="w-full mb-4 p-2 rounded border" />
-          )}
-          <button onClick={isRegister ? handleRegister : handleLogin} disabled={loading} className="w-full py-2 rounded bg-[#0090DE] text-white mb-2">
-            {loading ? "Please wait..." : isRegister ? "Create account" : "Sign in"}
-          </button>
-
-          <button onClick={handleGoogle} disabled={loading} className="w-full py-2 rounded border mb-2">
-            Continue with Google
-          </button>
-
-          <div
-                className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 relative z-10 ${closing ? "animate-disintegrate" : ""
-                  }`}
-              >
-            {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-            <button onClick={() => setIsRegister(!isRegister)} className="text-xl font-bold mb-4">
-              {isRegister ? "Sign in" : "Create account"}
+      {isOpen && (
+        <motion.div
+          key="backdrop"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div
+            key="modal"
+            variants={dustEffect}
+            initial={{ opacity: 0, scale: 0.9, y: 30 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: 0,
+              transition: { duration: 0.35, ease: "easeOut" },
+            }}
+            exit="exit"
+            className={`relative ${neonBg} ${neonBorder} ${neonGlow} rounded-2xl w-[92%] max-w-lg p-6 text-left overflow-hidden`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                clear();
+                onClose();
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl"
+            >
+              ✕
             </button>
-          </div>
+
+            <h3 className={`text-2xl font-semibold mb-2 ${blueText}`}>
+              {isRegister ? "Create Account" : "Sign In"}
+            </h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Secure access — AI-enabled auth flow
+            </p>
+
+            {errorMsg && (
+              <div className="mb-3 text-sm text-red-400 bg-red-900/10 p-2 rounded">
+                {errorMsg}
+              </div>
+            )}
+
+            <div className="grid gap-3">
+              {isRegister && (
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+                />
+              )}
+
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+              />
+
+              {isRegister && (
+                <>
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Phone number"
+                    className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+                  />
+                  <input
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Address"
+                    className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+                  />
+                </>
+              )}
+
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+              />
+
+              {isRegister && (
+                <input
+                  type="password"
+                  value={confrmPass}
+                  onChange={(e) => setConfrmPass(e.target.value)}
+                  placeholder="Confirm password"
+                  className="w-full p-3 rounded-md bg-[#0b0b0c] border border-[#002a45] placeholder:text-gray-400 text-white focus:ring-2 focus:ring-[#00a0ff]/30"
+                />
+              )}
+
+              <button
+                onClick={isRegister ? handleRegister : handleLogin}
+                disabled={loading}
+                className={`w-full py-3 rounded-md text-white ${
+                  loading ? "opacity-70 cursor-not-allowed" : ""
+                } bg-gradient-to-r from-[#006bb3] to-[#00a0ff] shadow-[0_8px_30px_rgba(0,160,255,0.12)]`}
+              >
+                {loading
+                  ? "Please wait..."
+                  : isRegister
+                  ? "Create account"
+                  : "Sign in"}
+              </button>
+
+              {/* Google button with G icon */}
+              <button
+                onClick={handleGoogle}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-md border border-[#003a5a] text-[#a7e7ff] bg-[#061016] hover:bg-[#071822] transition-all duration-300"
+              >
+                <FcGoogle size={22} />
+                <span className="font-medium">Sign with Google</span>
+              </button>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between text-sm text-gray-300">
+              <div>
+                {isRegister
+                  ? "Already have an account?"
+                  : "Don't have an account?"}
+              </div>
+              <button
+                onClick={() => {
+                  setIsRegister(!isRegister);
+                  setErrorMsg("");
+                }}
+                className="text-[#9fe7ff] font-semibold"
+              >
+                {isRegister ? "Sign in" : "Create account"}
+              </button>
+            </div>
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
     </AnimatePresence>
   );
 }
+
 
 // // src/components/AuthModal.js
 // import React, { useState, useEffect, useRef } from "react";
