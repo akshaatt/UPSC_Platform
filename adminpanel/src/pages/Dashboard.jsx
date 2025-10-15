@@ -43,7 +43,8 @@ import {
   doc,
   where,
   setDoc,
-  getDocs
+  getDocs,
+  updateDoc
 } from "firebase/firestore";
 
 import {
@@ -59,7 +60,8 @@ import {
 const tabs = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
   { key: "queries", label: "User Queries", icon: MessageCircle },
-   { key: "plans", label: "Subscription Plans", icon: Crown },
+  { key: "plans", label: "Subscription Plans", icon: Crown },
+  { key: "mentorship", label: "Mentorship", icon: Users },
   { key: "room", label: "Create Room", icon: BookPlus },
   { key: "yt", label: "Add YouTube Video", icon: Youtube },
   { key: "custom", label: "Add Custom Video", icon: Video },
@@ -137,7 +139,7 @@ export default function Dashboard() {
             {active === "overview" && <Overview />}
             {active === "queries" && <QueriesAdmin />}
             {active === "plans" && <PlansAdmin />}
-
+            {active === "mentorship" && <MentorshipAdmin />} {/* ✅ NEW */}
             {active === "room" && <CreateRoom />}
             {active === "yt" && <AddYouTubeVideo />}
             {active === "custom" && <AddCustomVideo />}
@@ -1783,6 +1785,7 @@ function CreateRoom() {
     date: "",
     time: "",
     link: "",
+    maxParticipants: "",
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -1794,19 +1797,29 @@ function CreateRoom() {
     e.preventDefault();
     setMsg("");
     if (!room.title || !room.date || !room.time || !room.link) {
-      setMsg("Please fill title, date, time and meeting link.");
+      setMsg("⚠️ Please fill title, date, time, and meeting link.");
       return;
     }
+
     setSaving(true);
     try {
       const startAt = new Date(`${room.date}T${room.time}`);
       await addDoc(collection(db, "studyRooms"), {
         ...room,
+        maxParticipants: Number(room.maxParticipants) || 8, // default 8
+        currentParticipants: 0, // starts from zero
         startAt,
         createdAt: serverTimestamp(),
       });
       setMsg("✅ Room created successfully!");
-      setRoom({ title: "", description: "", date: "", time: "", link: "" });
+      setRoom({
+        title: "",
+        description: "",
+        date: "",
+        time: "",
+        link: "",
+        maxParticipants: "",
+      });
     } catch (err) {
       setMsg("❌ " + err.message);
     } finally {
@@ -1826,14 +1839,14 @@ function CreateRoom() {
           value={room.title}
           onChange={onChange}
           placeholder="Room title"
-          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100"
         />
         <textarea
           name="description"
           value={room.description}
           onChange={onChange}
           placeholder="Short description (optional)"
-          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100"
         />
         <div className="grid grid-cols-2 gap-3">
           <input
@@ -1851,12 +1864,21 @@ function CreateRoom() {
             className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100"
           />
         </div>
+        {/* 👇 New field for max participants */}
+        <input
+          type="number"
+          name="maxParticipants"
+          value={room.maxParticipants}
+          onChange={onChange}
+          placeholder="Max participants (e.g. 8)"
+          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100"
+        />
         <input
           name="link"
           value={room.link}
           onChange={onChange}
           placeholder="Meeting link (Google Meet / Zoom)"
-          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+          className="w-full rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 p-3 text-gray-900 dark:text-gray-100"
         />
         <button
           type="submit"
@@ -1872,61 +1894,103 @@ function CreateRoom() {
     </div>
   );
 }
+
+/* --------------------- RECENT ROOMS ---------------------- */
 function RecentRooms() {
   const [rooms, setRooms] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [registrations, setRegistrations] = useState([]);
+  const [counts, setCounts] = useState({}); // { roomId: number }
 
   useEffect(() => {
     const q = query(collection(db, "studyRooms"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) =>
-      setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
+    const unsub = onSnapshot(q, (snap) => {
+      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setRooms(arr);
+
+      // ensure a listener per room for registration counts (cleanup old listeners implicit)
+      // We'll create listeners per visible room (first 20) to save resources
+      setupCounts(arr.slice(0, 20));
+    });
     return () => unsub();
   }, []);
 
+  // store listeners so we can unsubscribe if rooms change (kept simple)
+  const listenersRef = React.useRef({}); // { roomId: unsub }
+
+  const setupCounts = (roomList) => {
+    // remove listeners that are not in roomList
+    const keep = new Set(roomList.map((r) => r.id));
+    Object.keys(listenersRef.current).forEach((roomId) => {
+      if (!keep.has(roomId)) {
+        listenersRef.current[roomId]();
+        delete listenersRef.current[roomId];
+        setCounts((c) => {
+          const copy = { ...c };
+          delete copy[roomId];
+          return copy;
+        });
+      }
+    });
+
+    // add listeners for rooms missing
+    roomList.forEach((r) => {
+      if (listenersRef.current[r.id]) return; // already listening
+      const q = query(collection(db, "registrations"), where("roomId", "==", r.id));
+      const unsub = onSnapshot(q, (snap) => {
+        setCounts((c) => ({ ...c, [r.id]: snap.size }));
+      });
+      listenersRef.current[r.id] = unsub;
+    });
+  };
+
   const remove = async (id) => {
     if (!window.confirm("Delete this room?")) return;
+    // existing delete logic
     await deleteDoc(doc(db, "studyRooms", id));
   };
 
   const openRegistrations = (roomId) => {
     setSelectedRoom(roomId);
-    const q = query(
-      collection(db, "registrations"),
-      where("roomId", "==", roomId)
-    );
-    return onSnapshot(q, (snap) => {
+    const q = query(collection(db, "registrations"), where("roomId", "==", roomId));
+    const unsub = onSnapshot(q, (snap) => {
       setRegistrations(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
+    // if previously had a registration listener, remove it (we'll reuse the counts listenersRef)
+    // store this unsub so modal close can unsubscribe:
+    listenersRef.current["modal"] && listenersRef.current["modal"]();
+    listenersRef.current["modal"] = unsub;
+  };
+
+  const closeModal = () => {
+    if (listenersRef.current["modal"]) {
+      listenersRef.current["modal"]();
+      delete listenersRef.current["modal"];
+    }
+    setSelectedRoom(null);
+    setRegistrations([]);
   };
 
   return (
     <div className="mt-8">
-      <h3 className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">
-        Recent Rooms
-      </h3>
+      <h3 className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">Recent Rooms</h3>
+
       {rooms.length === 0 ? (
         <p className="text-sm text-gray-500">No rooms yet.</p>
       ) : (
         <div className="space-y-3">
           {rooms.slice(0, 8).map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between rounded-xl border bg-white/70 dark:bg-white/5 px-4 py-3"
-            >
-              <div
-                className="min-w-0 cursor-pointer"
-                onClick={() => openRegistrations(r.id)}
-              >
-                <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {r.title}
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  {r.date} • {r.time}
-                </p>
+            <div key={r.id} className="flex items-center justify-between rounded-xl border bg-white/70 dark:bg-white/5 px-4 py-3">
+              <div className="min-w-0 cursor-pointer" onClick={() => openRegistrations(r.id)}>
+                <p className="font-medium text-gray-900 dark:text-gray-100 truncate">{r.title}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">{r.date} • {r.time}</p>
               </div>
+
               <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-200/50 dark:bg-gray-700/50 px-2 py-0.5 rounded">
+                  {(counts[r.id] || r.currentParticipants || 0)}/{r.maxParticipants || 8}
+                </span>
+
                 {r.link && (
                   <a href={r.link} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-white/70 dark:hover:bg-white/10">
                     <ExternalLink size={16} />
@@ -1941,50 +2005,23 @@ function RecentRooms() {
         </div>
       )}
 
-      {/* Popup Modal */}
       <AnimatePresence>
         {selectedRoom && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-xl"
-            >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-xl">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Registrations
-                </h2>
-                <button
-                  onClick={() => setSelectedRoom(null)}
-                  className="text-gray-500 hover:text-gray-800"
-                >
-                  <X size={20} />
-                </button>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Registrations</h2>
+                <button onClick={closeModal} className="text-gray-500 hover:text-gray-800"><X size={20} /></button>
               </div>
 
               {registrations.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No users registered for this room yet.
-                </p>
+                <p className="text-sm text-gray-500">No users registered for this room yet.</p>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-auto">
                   {registrations.map((reg) => (
-                    <div
-                      key={reg.id}
-                      className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700 flex justify-between"
-                    >
-                      <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                        {reg.name || "—"}
-                      </span>
-                      <span className="text-xs text-gray-600 dark:text-gray-300">
-                        {reg.email || "—"}
-                      </span>
+                    <div key={reg.id} className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700 flex justify-between">
+                      <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{reg.name || "—"}</span>
+                      <span className="text-xs text-gray-600 dark:text-gray-300">{reg.email || "—"}</span>
                     </div>
                   ))}
                 </div>
@@ -1996,7 +2033,6 @@ function RecentRooms() {
     </div>
   );
 }
-
 /* ---------------------------
    Components: Add YouTube
 ----------------------------*/
@@ -2258,12 +2294,14 @@ function RecentVideos({ filterType }) {
 function StudentsTable() {
   const [users, setUsers] = useState([]);
   const [sortOrder, setSortOrder] = useState("desc");
-  const [inputKey, setInputKey] = useState("");
+  const [adminKey, setAdminKey] = useState("");
   const [search, setSearch] = useState("");
-  const [deleting, setDeleting] = useState(null); // user being deleted
+  const [deleting, setDeleting] = useState(null);
+  const [updating, setUpdating] = useState(null);
 
-  const SECRET_KEY = "iShIkAaKsHaT"; // 🔑 Replace with your secure key
+  const SECRET_KEY = "ishikaakshat"; // 🔑 change for production
 
+  // 🔥 Real-time listener
   useEffect(() => {
     const q = query(collection(db, "users"), orderBy("createdAt", sortOrder));
     const unsub = onSnapshot(q, (snap) =>
@@ -2272,11 +2310,26 @@ function StudentsTable() {
     return () => unsub();
   }, [sortOrder]);
 
+  // 🔍 Filter
+  const filteredUsers = users.filter((u) => {
+    const name = (u.name || u.fullName || "").toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    return (
+      name.includes(search.toLowerCase()) || email.includes(search.toLowerCase())
+    );
+  });
+
+  // 📊 Stats
+  const totalStudents = users.length;
+  const planStats = users.reduce((acc, u) => {
+    const plan = (u.plan || "Free").toLowerCase();
+    acc[plan] = (acc[plan] || 0) + 1;
+    return acc;
+  }, {});
+
+  // 🗑 Delete user
   const handleDelete = async (id) => {
-    if (inputKey !== SECRET_KEY) {
-      alert("❌ Wrong admin key! You cannot delete this student.");
-      return;
-    }
+    if (adminKey !== SECRET_KEY) return alert("❌ Invalid admin key!");
     if (!window.confirm("Are you sure you want to delete this student?")) return;
 
     try {
@@ -2285,42 +2338,52 @@ function StudentsTable() {
       const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
 
       await deleteUserAccount({ uid: id });
+      await deleteDoc(doc(db, "users", id));
 
       setUsers((prev) => prev.filter((u) => u.id !== id));
-      alert("✅ User deleted from Firebase Auth + Firestore (email sent)!");
+      alert("✅ User deleted successfully!");
     } catch (err) {
-      console.error("Error deleting user:", err);
-      alert("❌ Failed to delete user: " + err.message);
+      console.error(err);
+      alert("❌ Deletion failed: " + err.message);
     } finally {
       setDeleting(null);
     }
   };
 
-  // 🔍 Filter users
-  const filteredUsers = users.filter(
-    (u) =>
-      (u.name || u.fullName || "")
-        .toLowerCase()
-        .includes(search.toLowerCase()) ||
-      (u.email || "").toLowerCase().includes(search.toLowerCase())
-  );
+  // 🔄 Update roomsLeft (admin)
+  const adjustRooms = async (id, delta) => {
+    if (adminKey !== SECRET_KEY) return alert("❌ Invalid admin key!");
+    try {
+      setUpdating(id);
+      const ref = doc(db, "users", id);
+      const current = users.find((u) => u.id === id);
+      const currentLeft = current?.roomsLeft ?? 0;
+      const maxRooms = current?.maxRooms ?? 0;
+      let newLeft = currentLeft + delta;
+      if (newLeft < 0) newLeft = 0;
+      if (maxRooms > 0 && newLeft > maxRooms) newLeft = maxRooms;
+      await setDoc(ref, { roomsLeft: newLeft }, { merge: true });
+      setUpdating(null);
+    } catch (err) {
+      console.error("Error updating rooms:", err);
+      alert("❌ Update failed: " + err.message);
+      setUpdating(null);
+    }
+  };
 
-  // 📊 Stats
-  const totalStudents = users.length;
-  const planCounts = users.reduce((acc, u) => {
-    const plan = (u.plan || "Free").toLowerCase();
-    acc[plan] = (acc[plan] || 0) + 1;
-    return acc;
-  }, {});
-
-  // 📂 Export CSV
-  const exportCSV = () => {
+  // 📤 Export
+  const exportToCSV = () => {
     const csv = Papa.unparse(
       filteredUsers.map((u) => ({
         Name: u.name || u.fullName || "—",
         Email: u.email || "—",
         Phone: u.phone || "—",
         Plan: u.plan || "Free",
+        RoomsLeft: u.roomsLeft ?? 0,
+        MaxRooms: u.maxRooms ?? 0,
+        PlanStart: u.planStart?.toDate
+          ? u.planStart.toDate().toLocaleDateString()
+          : "—",
         PlanExpiry: u.planExpiry?.toDate
           ? u.planExpiry.toDate().toLocaleDateString()
           : "—",
@@ -2329,18 +2392,24 @@ function StudentsTable() {
           : "—",
       }))
     );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, "students.csv");
+    saveAs(
+      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+      "students.csv"
+    );
   };
 
-  // 📂 Export Excel
-  const exportExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(
       filteredUsers.map((u) => ({
         Name: u.name || u.fullName || "—",
         Email: u.email || "—",
         Phone: u.phone || "—",
         Plan: u.plan || "Free",
+        RoomsLeft: u.roomsLeft ?? 0,
+        MaxRooms: u.maxRooms ?? 0,
+        PlanStart: u.planStart?.toDate
+          ? u.planStart.toDate().toLocaleDateString()
+          : "—",
         PlanExpiry: u.planExpiry?.toDate
           ? u.planExpiry.toDate().toLocaleDateString()
           : "—",
@@ -2349,21 +2418,21 @@ function StudentsTable() {
           : "—",
       }))
     );
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
-    XLSX.writeFile(workbook, "students.xlsx");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    XLSX.writeFile(wb, "students.xlsx");
   };
 
-  // 📂 Export PDF
-  const exportPDF = () => {
+  const exportToPDF = () => {
     const doc = new jsPDF();
     doc.text("Students Report", 14, 16);
-
     const tableData = filteredUsers.map((u) => [
       u.name || u.fullName || "—",
       u.email || "—",
       u.phone || "—",
       u.plan || "Free",
+      u.roomsLeft ?? 0,
+      u.maxRooms ?? 0,
       u.planExpiry?.toDate
         ? u.planExpiry.toDate().toLocaleDateString()
         : "—",
@@ -2371,148 +2440,161 @@ function StudentsTable() {
         ? u.createdAt.toDate().toLocaleDateString()
         : "—",
     ]);
-
     autoTable(doc, {
-      head: [["Name", "Email", "Phone", "Plan", "Expiry", "Registered"]],
+      head: [
+        [
+          "Name",
+          "Email",
+          "Phone",
+          "Plan",
+          "RoomsLeft",
+          "MaxRooms",
+          "Expiry",
+          "Registered",
+        ],
+      ],
       body: tableData,
       startY: 22,
     });
-
     doc.save("students.pdf");
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-        Students
-      </h2>
+    <div className="space-y-5">
+      <h2 className="text-xl font-bold text-gray-100">👥 Students</h2>
 
       {/* Stats */}
-      <div className="flex flex-wrap gap-4 mb-4">
-        <div className="px-4 py-2 bg-cyan-100 dark:bg-cyan-900 rounded-lg text-cyan-700 dark:text-cyan-200 font-semibold">
-          Total Students: {totalStudents}
-        </div>
-        {Object.entries(planCounts).map(([plan, count]) => (
-          <div
-            key={plan}
-            className="px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-700 dark:text-gray-300"
+      <div className="flex flex-wrap gap-3">
+        <span className="px-4 py-2 bg-cyan-900/40 rounded-lg text-cyan-300 font-semibold">
+          Total: {totalStudents}
+        </span>
+        {Object.entries(planStats).map(([k, v]) => (
+          <span
+            key={k}
+            className="px-4 py-2 bg-gray-800 rounded-lg text-gray-300 capitalize"
           >
-            {plan.charAt(0).toUpperCase() + plan.slice(1)}: {count}
-          </div>
+            {k}: {v}
+          </span>
         ))}
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 items-center">
         <input
           type="password"
-          placeholder="Enter Admin Key"
-          value={inputKey}
-          onChange={(e) => setInputKey(e.target.value)}
-          className="border rounded px-3 py-2 text-sm"
+          placeholder="Admin Key"
+          value={adminKey}
+          onChange={(e) => setAdminKey(e.target.value)}
+          className="p-2 rounded border border-gray-700 bg-gray-800 text-white"
         />
         <button
           onClick={() =>
             setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
           }
-          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm"
+          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded"
         >
-          Sort by Date ({sortOrder === "asc" ? "↑" : "↓"})
+          Sort ({sortOrder})
         </button>
         <input
           type="text"
-          placeholder="Search by name/email"
+          placeholder="Search by name or email"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 border rounded px-3 py-2 text-sm"
+          className="flex-1 p-2 rounded border border-gray-700 bg-gray-800 text-white"
         />
         <button
-          onClick={exportCSV}
-          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm"
+          onClick={exportToCSV}
+          className="px-3 py-2 bg-green-600 rounded text-white"
         >
-          Export CSV
+          CSV
         </button>
         <button
-          onClick={exportExcel}
-          className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm"
+          onClick={exportToExcel}
+          className="px-3 py-2 bg-purple-600 rounded text-white"
         >
-          Export Excel
+          Excel
         </button>
         <button
-          onClick={exportPDF}
-          className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+          onClick={exportToPDF}
+          className="px-3 py-2 bg-red-600 rounded text-white"
         >
-          Export PDF
+          PDF
         </button>
       </div>
 
       {/* Table */}
-      {filteredUsers.length === 0 ? (
-        <p className="text-sm text-gray-500">No students found.</p>
-      ) : (
-        <div className="overflow-auto rounded-xl border border-white/30 dark:border-white/10">
-          <table className="min-w-full text-sm">
-            <thead className="bg-white/70 dark:bg-white/10">
-              <tr>
-                <Th>Name</Th>
-                <Th>Email</Th>
-                <Th>Phone</Th>
-                <Th>Plan</Th>
-                <Th>Expiry</Th>
-                <Th>Date of Registration</Th>
-                <Th>Actions</Th>
+      <div className="overflow-auto rounded-lg border border-gray-700">
+        <table className="min-w-full text-sm text-gray-200">
+          <thead className="bg-gray-800 text-gray-300">
+            <tr>
+              <th className="px-4 py-3 text-left">Name</th>
+              <th className="px-4 py-3 text-left">Email</th>
+              <th className="px-4 py-3 text-left">Phone</th>
+              <th className="px-4 py-3 text-left">Plan</th>
+              <th className="px-4 py-3 text-left">Rooms</th>
+              <th className="px-4 py-3 text-left">Start</th>
+              <th className="px-4 py-3 text-left">Expiry</th>
+              <th className="px-4 py-3 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.map((u) => (
+              <tr
+                key={u.id}
+                className="border-t border-gray-700 hover:bg-gray-800/50"
+              >
+                <td className="px-4 py-2">{u.name || u.fullName || "—"}</td>
+                <td className="px-4 py-2">{u.email || "—"}</td>
+                <td className="px-4 py-2">{u.phone || "—"}</td>
+                <td className="px-4 py-2 capitalize">{u.plan || "Free"}</td>
+                <td className="px-4 py-2 flex items-center gap-2">
+                  <button
+                    onClick={() => adjustRooms(u.id, -1)}
+                    disabled={updating === u.id}
+                    className="px-2 py-1 bg-gray-700 rounded text-white hover:bg-gray-600"
+                  >
+                    ➖
+                  </button>
+                  <span>
+                    {u.roomsLeft ?? 0}/{u.maxRooms ?? "—"}
+                  </span>
+                  <button
+                    onClick={() => adjustRooms(u.id, +1)}
+                    disabled={updating === u.id}
+                    className="px-2 py-1 bg-gray-700 rounded text-white hover:bg-gray-600"
+                  >
+                    ➕
+                  </button>
+                </td>
+                <td className="px-4 py-2">
+                  {u.planStart?.toDate
+                    ? u.planStart.toDate().toLocaleDateString()
+                    : "—"}
+                </td>
+                <td className="px-4 py-2">
+                  {u.planExpiry?.toDate
+                    ? u.planExpiry.toDate().toLocaleDateString()
+                    : "—"}
+                </td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleDelete(u.id)}
+                    disabled={deleting === u.id}
+                    className={`px-3 py-1 rounded text-xs ${
+                      deleting === u.id
+                        ? "bg-gray-500 cursor-not-allowed"
+                        : "bg-red-600 hover:bg-red-700"
+                    } text-white`}
+                  >
+                    {deleting === u.id ? "Deleting…" : "Delete"}
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-white/20">
-              {filteredUsers.map((u) => (
-                <tr key={u.id} className="hover:bg-white/50 dark:hover:bg-white/5">
-                  <Td>{u.name || u.fullName || "—"}</Td>
-                  <Td>{u.email || "—"}</Td>
-                  <Td>{u.phone || "—"}</Td>
-                  <Td className="capitalize">{u.plan || "Free"}</Td>
-                  <Td>
-                    {u.planExpiry?.toDate
-                      ? u.planExpiry.toDate().toLocaleDateString()
-                      : "—"}
-                  </Td>
-                  <Td>
-                    {u.createdAt?.toDate
-                      ? u.createdAt.toDate().toLocaleDateString()
-                      : "—"}
-                  </Td>
-                  <Td>
-                    <button
-                      onClick={() => handleDelete(u.id)}
-                      disabled={deleting === u.id}
-                      className={`px-3 py-1 rounded text-xs text-white ${
-                        deleting === u.id
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-red-500 hover:bg-red-600"
-                      }`}
-                    >
-                      {deleting === u.id ? "Deleting…" : "Delete"}
-                    </button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
-  );
-}
-
-function Th({ children }) {
-  return (
-    <th className="text-left px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">
-      {children}
-    </th>
-  );
-}
-function Td({ children }) {
-  return (
-    <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{children}</td>
   );
 }
 /*---------------------------Exclusive notes------------------------*/
@@ -2885,6 +2967,424 @@ function PlansAdmin() {
     </div>
   );
 }
+/* ---------------------------
+   ✅ Component: Mentorship Admin
+----------------------------*/
+function MentorshipAdmin() {
+  const [tab, setTab] = useState("mentors");
+  const [mentors, setMentors] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [slots, setSlots] = useState([]);
+  const [selectedMentor, setSelectedMentor] = useState(null);
+  const [slotDate, setSlotDate] = useState("");
+  const [slotTime, setSlotTime] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    qualification: "",
+    description: "",
+    specialization: "",
+    image: null,
+  });
+  const [msg, setMsg] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const storage = getStorage();
 
+  /* 🔹 Fetch Mentors */
+  useEffect(() => {
+    const q = query(collection(db, "mentors"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) =>
+      setMentors(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
 
+  /* 🔹 Fetch Bookings */
+  useEffect(() => {
+    const q = query(
+      collection(db, "mentorshipBookings"),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) =>
+      setBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, []);
 
+  /* 🔹 Fetch Slots */
+  useEffect(() => {
+    if (!selectedMentor) return;
+    const q = query(
+      collection(db, "mentors", selectedMentor.id, "slots"),
+      orderBy("date", "asc")
+    );
+    const unsub = onSnapshot(q, (snap) =>
+      setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [selectedMentor]);
+
+  /* ✅ Add Mentor */
+  const handleAddMentor = async (e) => {
+    e.preventDefault();
+    if (!form.name || !form.qualification || !form.image)
+      return setMsg("⚠️ Fill name, qualification, and image.");
+
+    try {
+      setUploading(true);
+      const path = `mentors/${Date.now()}-${form.image.name}`;
+      const imgRef = ref(storage, path);
+      await uploadBytes(imgRef, form.image);
+      const imgUrl = await getDownloadURL(imgRef);
+
+      const { image, ...mentorData } = form;
+
+      await addDoc(collection(db, "mentors"), {
+        ...mentorData,
+        imageUrl: imgUrl,
+        storagePath: path,
+        createdAt: serverTimestamp(),
+      });
+
+      setForm({
+        name: "",
+        qualification: "",
+        description: "",
+        specialization: "",
+        image: null,
+      });
+      setMsg("✅ Mentor added successfully!");
+    } catch (err) {
+      setMsg("❌ " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /* ✅ Delete Mentor */
+  const deleteMentor = async (m) => {
+    if (!window.confirm(`Delete mentor "${m.name}"?`)) return;
+    try {
+      if (m.storagePath) await deleteObject(ref(storage, m.storagePath));
+      await deleteDoc(doc(db, "mentors", m.id));
+      setMsg("🗑️ Deleted successfully");
+    } catch (err) {
+      setMsg("❌ " + err.message);
+    }
+  };
+
+  /* ✅ Add Slot */
+  const addSlot = async () => {
+    if (!selectedMentor) return alert("⚠️ Please select a mentor first.");
+    if (!slotDate || !slotTime)
+      return alert("⚠️ Please enter both date and time.");
+
+    try {
+      await addDoc(collection(db, "mentors", selectedMentor.id, "slots"), {
+        date: slotDate,
+        time: slotTime,
+        createdAt: serverTimestamp(),
+      });
+      setSlotDate("");
+      setSlotTime("");
+      alert("✅ Slot added successfully!");
+    } catch (err) {
+      console.error("Error adding slot:", err);
+      alert("❌ Failed to add slot: " + err.message);
+    }
+  };
+
+  /* ✅ Delete Slot */
+  const deleteSlot = async (slot) => {
+    if (!selectedMentor) return;
+    await deleteDoc(doc(db, "mentors", selectedMentor.id, "slots", slot.id));
+  };
+
+  /* ✅ Mark Booking Completed */
+  const markCompleted = async (b) => {
+    try {
+      await updateDoc(doc(db, "mentorshipBookings", b.id), {
+        status: "completed",
+      });
+      alert("✅ Session marked as completed!");
+    } catch (err) {
+      alert("❌ Failed to update: " + err.message);
+    }
+  };
+
+  /* ✅ Delete Booking */
+  const deleteBooking = async (b) => {
+    if (!window.confirm("Delete this booking? This will free the slot.")) return;
+    try {
+      await deleteDoc(doc(db, "mentorshipBookings", b.id));
+      alert("🗑️ Booking deleted successfully.");
+    } catch (err) {
+      alert("❌ " + err.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-6 bg-gray-900 text-white">
+      <h1 className="text-3xl font-bold text-cyan-400 mb-6">
+        🎓 Mentorship Admin Dashboard
+      </h1>
+
+      {/* ✅ Tabs */}
+      <div className="flex justify-center gap-4 bg-cyan-950 p-2 rounded-xl mb-8">
+        {["mentors", "slots", "bookings"].map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 rounded-md font-semibold transition ${
+              tab === t ? "bg-cyan-700 text-white" : "bg-gray-800 text-gray-300"
+            }`}
+          >
+            {t === "mentors" && "👩‍🏫 Mentors"}
+            {t === "slots" && "🕓 Slots"}
+            {t === "bookings" && "📅 Bookings"}
+          </button>
+        ))}
+      </div>
+
+      {/* 🔹 Mentors Tab */}
+      {tab === "mentors" && (
+        <>
+          <form
+            onSubmit={handleAddMentor}
+            className="bg-gray-800 p-6 rounded-xl border border-cyan-700/30 space-y-4 max-w-xl mx-auto"
+          >
+            <input
+              type="text"
+              placeholder="Mentor Name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full p-3 rounded bg-gray-700"
+            />
+            <input
+              type="text"
+              placeholder="Qualification"
+              value={form.qualification}
+              onChange={(e) =>
+                setForm({ ...form, qualification: e.target.value })
+              }
+              className="w-full p-3 rounded bg-gray-700"
+            />
+            <input
+              type="text"
+              placeholder="Specialization"
+              value={form.specialization}
+              onChange={(e) =>
+                setForm({ ...form, specialization: e.target.value })
+              }
+              className="w-full p-3 rounded bg-gray-700"
+            />
+            <textarea
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+              className="w-full p-3 rounded bg-gray-700"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) =>
+                setForm({ ...form, image: e.target.files[0] || null })
+              }
+              className="text-gray-300"
+            />
+            <button
+              disabled={uploading}
+              className="w-full bg-cyan-600 hover:bg-cyan-700 py-2 rounded-lg font-semibold"
+            >
+              {uploading ? "Uploading..." : "Add Mentor"}
+            </button>
+            {msg && <p className="text-cyan-400 mt-2">{msg}</p>}
+          </form>
+
+          <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {mentors.map((m) => (
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-gray-800 p-4 rounded-xl border border-gray-700"
+              >
+                <img
+                  src={m.imageUrl}
+                  alt={m.name}
+                  className="w-full h-40 object-cover rounded-lg mb-3"
+                />
+                <h4 className="font-bold">{m.name}</h4>
+                <p className="text-sm">{m.qualification}</p>
+                <p className="text-xs text-gray-400">{m.specialization}</p>
+                <button
+                  onClick={() => deleteMentor(m)}
+                  className="mt-3 bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg w-full"
+                >
+                  Delete
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* 🔹 Slots Tab */}
+      {tab === "slots" && (
+        <div className="bg-gray-800 p-6 rounded-xl border border-cyan-700/30 space-y-4 max-w-2xl mx-auto">
+          <h3 className="text-xl font-bold text-cyan-400">Add Slots for Mentor</h3>
+          <select
+            className="w-full p-3 bg-gray-700 rounded"
+            onChange={(e) =>
+              setSelectedMentor(
+                mentors.find((m) => m.id === e.target.value) || null
+              )
+            }
+          >
+            <option value="">Select Mentor</option>
+            {mentors.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+
+          {selectedMentor && (
+            <>
+              <label className="block text-sm text-gray-300 mt-4 mb-1">
+                Select Date
+              </label>
+              <input
+                type="date"
+                value={slotDate}
+                onChange={(e) => setSlotDate(e.target.value)}
+                className="w-full p-2 rounded bg-gray-700 text-white mb-2"
+              />
+              <label className="block text-sm text-gray-300 mb-1">
+                Enter Time (e.g., 7:00 PM - 8:00 PM)
+              </label>
+              <input
+                type="text"
+                value={slotTime}
+                onChange={(e) => setSlotTime(e.target.value)}
+                placeholder="7:00 PM"
+                className="w-full p-2 rounded bg-gray-700 text-white mb-3"
+              />
+              <button
+                onClick={addSlot}
+                className="w-full bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg font-semibold"
+              >
+                Add Slot
+              </button>
+
+              <div className="mt-6">
+                <h4 className="text-lg font-semibold text-cyan-300 mb-2">
+                  Existing Slots
+                </h4>
+                {slots.length === 0 ? (
+                  <p className="text-gray-400">No slots added yet.</p>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {slots.map((s) => (
+                      <div
+                        key={s.id}
+                        className="bg-gray-700 p-3 rounded-lg flex justify-between items-center"
+                      >
+                        <span>
+                          {s.date
+                            ? new Date(s.date).toLocaleDateString("en-IN", {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                              })
+                            : "No date"}{" "}
+                          — {s.time}
+                        </span>
+                        <button
+                          onClick={() => deleteSlot(s)}
+                          className="text-red-400 hover:text-red-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 🔹 Bookings Tab */}
+      {tab === "bookings" && (
+        <div className="max-w-5xl mx-auto">
+          <h3 className="text-xl font-bold text-cyan-400 mb-4">
+            Recent Bookings
+          </h3>
+          {bookings.length === 0 ? (
+            <p className="text-gray-400">No bookings yet.</p>
+          ) : (
+            <div className="overflow-auto border border-gray-700 rounded-lg">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-800 text-gray-300">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Student</th>
+                    <th className="px-4 py-2 text-left">Mentor</th>
+                    <th className="px-4 py-2 text-left">Slot</th>
+                    <th className="px-4 py-2 text-left">Code</th>
+                    <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b) => (
+                    <tr
+                      key={b.id}
+                      className="border-t border-gray-700 hover:bg-gray-800/60"
+                    >
+                      <td className="px-4 py-2">{b.userName}</td>
+                      <td className="px-4 py-2">{b.mentorName}</td>
+                      <td className="px-4 py-2">
+                        {b.slotDate} — {b.slotTime}
+                      </td>
+                      <td className="px-4 py-2 text-cyan-400 font-mono">
+                        {b.code}
+                      </td>
+                      <td
+                        className={`px-4 py-2 font-semibold ${
+                          b.status === "completed"
+                            ? "text-green-400"
+                            : "text-yellow-400"
+                        }`}
+                      >
+                        {b.status}
+                      </td>
+                      <td className="px-4 py-2 flex gap-3">
+                        {b.status !== "completed" && (
+                          <button
+                            onClick={() => markCompleted(b)}
+                            className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-white text-xs"
+                          >
+                            Mark Completed
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteBooking(b)}
+                          className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-white text-xs"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

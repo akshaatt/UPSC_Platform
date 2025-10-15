@@ -28,7 +28,8 @@ import Footer from "./components/Footer";
 import ContactUsModal from "./components/ContactUsModal";
 import CurrentAffairsBanner from "./components/CurrentAffairsBanner";
 import DailyExam from "./components/DailyExam";
-import QueryResponsePopup from "./components/QueryResponsePopup"; // ✅ New
+import QueryResponsePopup from "./components/QueryResponsePopup";
+import Mentorship from "./components/Mentorship"; // ✅ New Section
 
 // Pages
 import Library from "./pages/Library";
@@ -50,8 +51,7 @@ import DailyQuiz from "./pages/DailyQuiz";
 import Csat from "./pages/Csat";
 import AboutUPSC from "./pages/AboutUPSC";
 import ExclusiveNotes from "./pages/ExclusiveNotes";
-
-
+import MentorshipPage from "./pages/MentorshipPage"; // ✅ Newly Added Page
 
 // ✅ Homepage
 function HomePage() {
@@ -74,7 +74,7 @@ function HomePage() {
       <div className="max-w-5xl mx-auto px-6 py-10 text-center text-gray-700 dark:text-gray-300">
         <h2 className="text-2xl font-bold mb-4">Welcome to Satyapath</h2>
         <p>
-          Explore study rooms, ask your doubts, and access curated UPSC
+          Explore study rooms, mentorship sessions, and access curated UPSC
           materials. Start your journey today!
         </p>
 
@@ -86,14 +86,15 @@ function HomePage() {
       <TestPreview />
       <ToppersTalk videos={videos} />
       <StudyRoomsPreview />
-
-      {/* ✅ Daily Exam Component */}
       <DailyExam />
+
+      {/* ✅ Personal Mentorship Section */}
+      <Mentorship />
     </>
   );
 }
 
-// ✅ Wrapper for Router
+// ✅ App Wrapper with routes & logic
 function AppWrapper() {
   const location = useLocation();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -155,7 +156,9 @@ function AppWrapper() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">Loading…</div>
+      <div className="flex justify-center items-center h-screen">
+        Loading…
+      </div>
     );
   }
 
@@ -178,7 +181,6 @@ function AppWrapper() {
         {/* Public */}
         <Route path="/" element={<HomePage />} />
         <Route path="/aboutupsc" element={<AboutUPSC />} />
-
         <Route path="/dailyquiz" element={<DailyQuiz />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/dashboard" element={<Dashboard />} />
@@ -191,9 +193,9 @@ function AppWrapper() {
         <Route path="/study-rooms" element={<StudyRoom />} />
         <Route path="/current-affairs" element={<CurrentAffairs />} />
         <Route path="/csat-tests" element={<Csat />} />
-         <Route path="/exclusive-notes" element={<ExclusiveNotes />} />
+        <Route path="/exclusive-notes" element={<ExclusiveNotes />} />
 
-        {/* Protected */}
+        {/* ✅ Protected Routes */}
         <Route
           path="/topic-tests"
           element={
@@ -210,8 +212,6 @@ function AppWrapper() {
             </ProtectedTopicTests>
           }
         />
-
-        {/* ✅ Generic Test Runner route for Prelims + CSAT */}
         <Route
           path="/tests/:examType/:subject/:subtopic/:testId"
           element={
@@ -220,13 +220,21 @@ function AppWrapper() {
             </ProtectedTopicTests>
           }
         />
-
-        {/* ✅ Mains Tab Page */}
         <Route
           path="/mains-tab"
           element={
             <ProtectedTopicTests>
               <MainsTab />
+            </ProtectedTopicTests>
+          }
+        />
+
+        {/* ✅ Mentorship Page (Protected for paid plans) */}
+        <Route
+          path="/mentorship"
+          element={
+            <ProtectedTopicTests>
+              <MentorshipPage />
             </ProtectedTopicTests>
           }
         />
@@ -253,7 +261,7 @@ function AppWrapper() {
         onClose={() => setIsContactOpen(false)}
       />
 
-      {/* ✅ Query Response Popup always mounted */}
+      {/* ✅ Query Response Popup */}
       <QueryResponsePopup />
     </div>
   );

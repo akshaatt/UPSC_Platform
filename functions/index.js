@@ -16,6 +16,8 @@ const transporter = nodemailer.createTransport({
 
 const BRAND = "Satyapath";
 
+/* --------------------------- UTILITIES ---------------------------- */
+
 function sixDigitOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
@@ -50,15 +52,17 @@ function accountDeletedHtml({ name }) {
 }
 
 async function sendMail({ to, subject, html }) {
+  if (!GMAIL_USER || !GMAIL_PASS) {
+    console.warn("⚠️ Gmail credentials missing; skipping email to", to);
+    return;
+  }
   const mail = { from: `${BRAND} <${GMAIL_USER}>`, to, subject, html };
   await transporter.sendMail(mail);
 }
 
-/* ---------------------------
-   FUNCTIONS
----------------------------- */
+/* --------------------------- OTP FUNCTIONS ---------------------------- */
 
-// 1) Request OTP
+// 1️⃣ Request OTP
 exports.requestSignupOtpV1 = functions.https.onCall(async (data, context) => {
   const uid = data && data.uid;
   if (!context.auth || context.auth.uid !== uid) {
@@ -68,7 +72,8 @@ exports.requestSignupOtpV1 = functions.https.onCall(async (data, context) => {
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
 
-  let email = "", name = "";
+  let email = "",
+    name = "";
   if (snap.exists) {
     const d = snap.data();
     email = d.email;
@@ -84,15 +89,18 @@ exports.requestSignupOtpV1 = functions.https.onCall(async (data, context) => {
     new Date(Date.now() + 15 * 60 * 1000)
   );
 
-  await userRef.set({
-    email,
-    name,
-    isVerified: false,
-    otpCode: code,
-    otpExpiry: expiresAt,
-    shouldSendAccountCreatedAtNextLogin: true,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await userRef.set(
+    {
+      email,
+      name,
+      isVerified: false,
+      otpCode: code,
+      otpExpiry: expiresAt,
+      shouldSendAccountCreatedAtNextLogin: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
   await sendMail({
     to: email,
@@ -103,10 +111,10 @@ exports.requestSignupOtpV1 = functions.https.onCall(async (data, context) => {
   return { ok: true };
 });
 
-// 2) Verify OTP
+// 2️⃣ Verify OTP
 exports.verifySignupOtpV1 = functions.https.onCall(async (data, context) => {
   const uid = data && data.uid;
-  const code = String(data && data.code || "");
+  const code = String((data && data.code) || "");
 
   if (!context.auth || context.auth.uid !== uid) {
     throw new functions.https.HttpsError("permission-denied", "Not allowed.");
@@ -117,11 +125,15 @@ exports.verifySignupOtpV1 = functions.https.onCall(async (data, context) => {
 
   const ref = db.collection("users").doc(uid);
   const snap = await ref.get();
-  if (!snap.exists) throw new functions.https.HttpsError("not-found", "User doc missing.");
+  if (!snap.exists)
+    throw new functions.https.HttpsError("not-found", "User doc missing.");
 
   const d = snap.data();
   if (!d.otpCode || !d.otpExpiry) {
-    throw new functions.https.HttpsError("failed-precondition", "No OTP requested.");
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "No OTP requested."
+    );
   }
 
   const now = admin.firestore.Timestamp.now();
@@ -132,18 +144,21 @@ exports.verifySignupOtpV1 = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("invalid-argument", "Incorrect OTP.");
   }
 
-  // ✅ Mark verified
-  await ref.set({
-    isVerified: true,
-    otpCode: admin.firestore.FieldValue.delete(),
-    otpExpiry: admin.firestore.FieldValue.delete(),
-    verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await ref.set(
+    {
+      isVerified: true,
+      otpCode: admin.firestore.FieldValue.delete(),
+      otpExpiry: admin.firestore.FieldValue.delete(),
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
   return { ok: true, verified: true };
 });
 
-// 3) Send login email
+/* --------------------------- LOGIN EMAIL ---------------------------- */
+
 exports.sendLoginEmailV1 = functions.https.onCall(async (data, context) => {
   const uid = data && data.uid;
   if (!context.auth || context.auth.uid !== uid) {
@@ -152,7 +167,8 @@ exports.sendLoginEmailV1 = functions.https.onCall(async (data, context) => {
 
   const ref = db.collection("users").doc(uid);
   const snap = await ref.get();
-  if (!snap.exists) throw new functions.https.HttpsError("not-found", "User doc missing.");
+  if (!snap.exists)
+    throw new functions.https.HttpsError("not-found", "User doc missing.");
 
   const d = snap.data();
   const email = d.email;
@@ -184,7 +200,9 @@ exports.sendLoginEmailV1 = functions.https.onCall(async (data, context) => {
     html: loginHtml({ name, when }),
   });
 
-  const updates = { lastLoginAt: admin.firestore.FieldValue.serverTimestamp() };
+  const updates = {
+    lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
   if (isFirstLogin) {
     updates.firstLoginAt = admin.firestore.FieldValue.serverTimestamp();
     updates.shouldSendAccountCreatedAtNextLogin = false;
@@ -194,12 +212,9 @@ exports.sendLoginEmailV1 = functions.https.onCall(async (data, context) => {
   return { ok: true };
 });
 
-/* -------------------------------------------------
-   4) 🔥 Delete User (Admin Only)
-   (does not affect OTP/Login logic)
-------------------------------------------------- */
+/* --------------------------- DELETE USER ---------------------------- */
+
 exports.deleteUserAccount = functions.https.onCall(async (data, context) => {
-  // ✅ Only allow your admin UID
   if (context.auth?.uid !== "cEqNmVzP17Y1EUt6JCZTDNpw5W93") {
     throw new functions.https.HttpsError(
       "permission-denied",
@@ -208,32 +223,27 @@ exports.deleteUserAccount = functions.https.onCall(async (data, context) => {
   }
 
   const uid = data && data.uid;
-  if (!uid) throw new functions.https.HttpsError("invalid-argument", "Missing user ID");
+  if (!uid)
+    throw new functions.https.HttpsError("invalid-argument", "Missing user ID");
 
   try {
-    // Fetch user data from Firestore (for email)
     const ref = db.collection("users").doc(uid);
     const snap = await ref.get();
-    let email = "";
-    let name = "";
+    let email = "",
+      name = "";
     if (snap.exists) {
       const d = snap.data();
       email = d.email || "";
       name = d.name || "";
     } else {
-      // fallback: check Auth
       const authUser = await admin.auth().getUser(uid);
       email = authUser.email || "";
       name = authUser.displayName || "";
     }
 
-    // 1. Delete from Firebase Authentication
     await admin.auth().deleteUser(uid);
-
-    // 2. Delete Firestore user document
     await ref.delete();
 
-    // 3. Send account deleted email (if email exists)
     if (email) {
       await sendMail({
         to: email,
@@ -242,9 +252,194 @@ exports.deleteUserAccount = functions.https.onCall(async (data, context) => {
       });
     }
 
-    return { success: true, message: `User ${uid} deleted from Auth + Firestore` };
+    return { success: true, message: `User ${uid} deleted successfully.` };
   } catch (error) {
     console.error("Error deleting user:", error);
     throw new functions.https.HttpsError("unknown", error.message, error);
   }
 });
+
+/* --------------------------- REGISTRATION EMAIL TRIGGERS ---------------------------- */
+
+// 5️⃣ Enrollment email when registered
+exports.sendEnrollmentEmail = functions.firestore
+  .document("registrations/{regId}")
+  .onCreate(async (snap) => {
+    const data = snap.data();
+    if (!data) return null;
+
+    const userEmail = data.email;
+    const userName = data.name || "Aspirant";
+    const roomTitle = data.title || "Study Room";
+    const roomDate = data.date || "—";
+    const roomTime = data.time || "—";
+
+    const userHtml = `
+      <div style="font-family:Arial,sans-serif; line-height:1.6; color:#222;">
+        <h2>🎓 Registration Confirmed – ${roomTitle}</h2>
+        <p>Hi ${userName},</p>
+        <p>You have successfully registered for <b>${roomTitle}</b>.</p>
+        <p><b>Date:</b> ${roomDate}<br/><b>Time:</b> ${roomTime}</p>
+        <p>The meeting link will be active 5 minutes before the start time.</p>
+        <hr/>
+        <p style="font-size:13px;color:#888;">Regards,<br/>${BRAND} Team</p>
+      </div>`;
+
+    const adminHtml = `
+      <div style="font-family:Arial,sans-serif; line-height:1.6; color:#222;">
+        <h2>📢 New Study Room Registration</h2>
+        <p><b>User:</b> ${userName}</p>
+        <p><b>Email:</b> ${userEmail}</p>
+        <p><b>Room:</b> ${roomTitle}</p>
+        <p><b>Date:</b> ${roomDate}, <b>Time:</b> ${roomTime}</p>
+        <hr/>
+        <p style="font-size:13px;color:#888;">${BRAND} Admin Notification</p>
+      </div>`;
+
+    try {
+      if (userEmail) {
+        await sendMail({
+          to: userEmail,
+          subject: `${BRAND} – Registered for ${roomTitle}`,
+          html: userHtml,
+        });
+      }
+
+      await sendMail({
+        to: "satyapath.upsc@gmail.com",
+        subject: `${BRAND} – New Registration: ${roomTitle}`,
+        html: adminHtml,
+      });
+
+      console.log("✅ Enrollment emails sent for:", roomTitle);
+    } catch (err) {
+      console.error("❌ Error sending enrollment email:", err);
+    }
+
+    return null;
+  });
+
+// 6️⃣ Unenroll email when registration is deleted
+exports.sendUnenrollEmail = functions.firestore
+  .document("registrations/{regId}")
+  .onDelete(async (snap) => {
+    const data = snap.data();
+    if (!data) return null;
+
+    const userEmail = data.email;
+    const userName = data.name || "Aspirant";
+    const roomTitle = data.title || "Study Room";
+
+    const userHtml = `
+      <div style="font-family:Arial,sans-serif; line-height:1.6; color:#222;">
+        <h2>❎ Unenrolled from ${roomTitle}</h2>
+        <p>Hi ${userName},</p>
+        <p>You have successfully unenrolled from <b>${roomTitle}</b>.</p>
+        <p>If this was a mistake, you can rejoin anytime before the session starts.</p>
+        <hr/>
+        <p style="font-size:13px;color:#888;">Regards,<br/>${BRAND} Team</p>
+      </div>`;
+
+    const adminHtml = `
+      <div style="font-family:Arial,sans-serif; line-height:1.6; color:#222;">
+        <h2>📤 User Unenrolled</h2>
+        <p><b>User:</b> ${userName}</p>
+        <p><b>Email:</b> ${userEmail}</p>
+        <p><b>Room:</b> ${roomTitle}</p>
+        <p>This user has unenrolled from the study room.</p>
+        <hr/>
+        <p style="font-size:13px;color:#888;">${BRAND} Admin Notification</p>
+      </div>`;
+
+    try {
+      if (userEmail) {
+        await sendMail({
+          to: userEmail,
+          subject: `${BRAND} – Unenrolled from ${roomTitle}`,
+          html: userHtml,
+        });
+      }
+
+      await sendMail({
+        to: "satyapath.upsc@gmail.com",
+        subject: `${BRAND} – User Unenrolled: ${roomTitle}`,
+        html: adminHtml,
+      });
+
+      console.log("✅ Unenroll emails sent for:", roomTitle);
+    } catch (err) {
+      console.error("❌ Error sending unenroll email:", err);
+    }
+
+    return null;
+  });
+/* --------------------------- PLAN SYNC TRIGGER ---------------------------- */
+// 🔹 Auto-assign roomsLeft, maxRooms, planStart, planExpiry when user created or plan changes
+exports.syncRoomsWithPlan = functions.firestore
+  .document("users/{uid}")
+  .onWrite(async (change, ctx) => {
+    try {
+      const after = change.after.exists ? change.after.data() : null;
+      const before = change.before.exists ? change.before.data() : null;
+      if (!after) return null;
+
+      const plan = (after.plan || "lakshya").toLowerCase();
+
+      // 🔸 Define plan → room & duration mapping
+      const PLAN_CONFIG = {
+        lakshya: { maxRooms: 1, days: 0 },
+        safalta: { maxRooms: 8, days: 30 },
+        shikhar: { maxRooms: 20, days: 60 },
+        samarpan: { maxRooms: 60, days: 90 },
+      };
+
+      const config = PLAN_CONFIG[plan] || PLAN_CONFIG.lakshya;
+      const maxRooms = config.maxRooms;
+      const durationDays = config.days;
+
+      // 🔸 Detect conditions to resync
+      const planChanged = before?.plan !== after.plan;
+      const missingFields =
+        after.roomsLeft === undefined ||
+        after.maxRooms === undefined ||
+        after.planStart === undefined ||
+        after.planExpiry === undefined;
+
+      // 🔸 Detect mismatch: plan != rooms capacity
+      const planRoomsMismatch =
+        after.maxRooms !== maxRooms || after.roomsLeft > maxRooms;
+
+      // Skip only if nothing changed and no mismatch
+      if (!planChanged && !missingFields && !planRoomsMismatch) return null;
+
+      // 🔸 Calculate new expiry
+      const now = new Date();
+      const expiryDate =
+        durationDays > 0
+          ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+          : null;
+
+      // 🔸 Preserve used rooms if applicable (avoid over-reset)
+      let newRoomsLeft = after.roomsLeft;
+      if (planChanged || newRoomsLeft > maxRooms || newRoomsLeft === undefined)
+        newRoomsLeft = maxRooms;
+
+      const updates = {
+        maxRooms,
+        roomsLeft: newRoomsLeft,
+        planStart: admin.firestore.FieldValue.serverTimestamp(),
+        planExpiry: expiryDate
+          ? admin.firestore.Timestamp.fromDate(expiryDate)
+          : null,
+      };
+
+      await change.after.ref.set(updates, { merge: true });
+
+      console.log(
+        `✅ Synced plan for ${ctx.params.uid}: ${plan.toUpperCase()} (${newRoomsLeft}/${maxRooms})`
+      );
+    } catch (err) {
+      console.error("❌ syncRoomsWithPlan error:", err);
+    }
+    return null;
+  });

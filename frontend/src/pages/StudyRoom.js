@@ -1,3 +1,4 @@
+// src/pages/StudyRoom.jsx
 import React, { useEffect, useState } from "react";
 import { db, auth } from "../firebase";
 import {
@@ -6,6 +7,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   increment,
   serverTimestamp,
 } from "firebase/firestore";
@@ -19,21 +21,27 @@ export default function StudyRoom() {
   const [userDoc, setUserDoc] = useState(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "studyRooms"), (snap) => {
-      setRooms(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-    });
+    // live listen to study rooms
+    const unsubRooms = onSnapshot(collection(db, "studyRooms"), (snap) =>
+      setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
 
+    // listen to auth state & user doc
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const ref = doc(db, "users", u.uid);
-        const snap = await getDoc(ref);
-        if (snap.exists()) setUserDoc(snap.data());
+        const userRef = doc(db, "users", u.uid);
+        const unsubUser = onSnapshot(userRef, (snap) => {
+          if (snap.exists()) setUserDoc(snap.data());
+        });
+        u._unsubUserDoc = unsubUser;
+      } else {
+        setUserDoc(null);
       }
     });
 
     return () => {
-      unsub();
+      unsubRooms();
       unsubAuth();
     };
   }, []);
@@ -51,15 +59,13 @@ export default function StudyRoom() {
         </motion.h1>
 
         {rooms.length === 0 ? (
-          <p className="text-center text-gray-400">
-            No rooms available right now. Please check back later.
-          </p>
+          <p className="text-center text-gray-400">No rooms available.</p>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
-            {rooms.map((room, i) => (
+            {rooms.map((r, i) => (
               <RoomCard
-                key={room.id}
-                room={room}
+                key={r.id}
+                room={r}
                 user={user}
                 userDoc={userDoc}
                 index={i}
@@ -72,80 +78,149 @@ export default function StudyRoom() {
   );
 }
 
+/* ------------------ ROOM CARD -------------------- */
 function RoomCard({ room, user, userDoc, index }) {
   const [popup, setPopup] = useState("");
   const [step, setStep] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [registered, setRegistered] = useState(false);
 
+  // Calculate room status
   const eventTime = new Date(`${room.date}T${room.time}`);
   const now = new Date();
-  const diffMs = eventTime - now;
-  const diffMin = Math.floor(diffMs / 1000 / 60);
-
-  let status = "Upcoming";
-  if (diffMin <= 5 && diffMin > -120) status = "Live";
-  if (diffMin <= -120) status = "Ended";
+  const diffMin = Math.floor((eventTime - now) / 60000);
+  const status =
+    diffMin <= -120 ? "Ended" : diffMin <= 5 ? "Live" : "Upcoming";
 
   const planLimits = { safalta: 8, shikhar: 20, samarpan: 60 };
-  const plan = userDoc?.plan || "lakshya";
-  const maxRooms = planLimits[plan] || 1;
-  const usedRooms = userDoc?.usedRooms || 0;
-  const roomsLeft = maxRooms - usedRooms;
+  const plan = userDoc?.plan?.toLowerCase() || "lakshya";
+  const maxRooms = userDoc?.maxRooms || planLimits[plan] || 0;
+  const roomsLeft = userDoc?.roomsLeft ?? 0;
+
+  // local participant state
+  const totalSlots = Number(room.maxParticipants) || 8;
+  const [localCurrent, setLocalCurrent] = useState(
+    Number(room.currentParticipants) || 0
+  );
 
   useEffect(() => {
-    if (!user) return;
-    const checkRegistration = async () => {
+    setLocalCurrent(Number(room.currentParticipants) || 0);
+  }, [room.currentParticipants]);
+
+  const isFull = localCurrent >= totalSlots;
+
+  // check if user already registered
+  useEffect(() => {
+    if (!user) return setRegistered(false);
+    if (!room?.id) return;
+    const check = async () => {
       const ref = doc(db, "users", user.uid, "registrations", room.id);
       const snap = await getDoc(ref);
-      if (snap.exists()) setRegistered(true);
+      setRegistered(snap.exists());
     };
-    checkRegistration();
+    check();
   }, [user, room.id]);
 
+  /* ---------- Registration ---------- */
   const handleRegisterClick = () => {
-    if (!user) {
-      setPopup("⚠️ Please login to register.");
-      return;
-    }
+    if (!user) return setPopup("⚠️ Please login first.");
+    if (roomsLeft <= 0)
+      return setPopup("❌ No rooms left in your plan.");
     setStep(1);
   };
 
   const confirmRegister = () => {
-    if (roomsLeft <= 0) {
-      setPopup("❌ You have reached your plan limit.");
-      return;
-    }
+    if (roomsLeft <= 0) return setPopup("❌ Plan limit reached.");
+    if (isFull) return setPopup("❌ Group full.");
     setStep(2);
   };
 
   const finalizeRegister = async () => {
-    try {
-      await setDoc(doc(db, "users", user.uid, "registrations", room.id), {
-        roomId: room.id,
-        title: room.title,
-        registeredAt: serverTimestamp(),
-      });
+    if (!room?.id || !user?.uid) {
+      console.error("❌ Missing IDs:", { room, user });
+      setPopup("⚠️ Could not register — try again.");
+      return;
+    }
 
+    try {
+      // save user registration
       await setDoc(
-        doc(db, "users", user.uid),
-        { usedRooms: increment(1) },
+        doc(db, "users", user.uid, "registrations", room.id),
+        {
+          roomId: room.id,
+          title: room.title || "Untitled Room",
+          registeredAt: serverTimestamp(),
+        },
         { merge: true }
       );
 
-      await setDoc(doc(db, "registrations", `${room.id}_${user.uid}`), {
-        roomId: room.id,
-        uid: user.uid,
-        name: user.displayName || "Anonymous",
-        email: user.email,
-        registeredAt: serverTimestamp(),
-      });
+      // global registration for admin view
+      await setDoc(
+        doc(db, "registrations", `${room.id}_${user.uid}`),
+        {
+          roomId: room.id,
+          uid: user.uid,
+          name: user.displayName || userDoc?.name || "Anonymous",
+          email: user.email || userDoc?.email || "",
+          title: room.title || "",
+          date: room.date || "",
+          time: room.time || "",
+          link: room.link || "",
+          registeredAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
+      // update counts
+      await setDoc(
+        doc(db, "studyRooms", room.id),
+        { currentParticipants: increment(1) },
+        { merge: true }
+      );
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        { roomsLeft: increment(-1) },
+        { merge: true }
+      );
+
+      // update local UI
+      setLocalCurrent((c) => c + 1);
       setRegistered(true);
+      setPopup("✅ Registered successfully.");
       setStep(0);
-      setPopup("✅ You have successfully registered for this room.");
     } catch (err) {
-      setPopup("❌ " + err.message);
+      console.error("🔥 Registration error:", err);
+      setPopup("❌ " + (err.message || "Registration failed"));
+    }
+  };
+
+  /* ---------- Unenroll ---------- */
+  const handleUnenroll = async () => {
+    if (!room?.id || !user?.uid) return setPopup("⚠️ Invalid operation.");
+
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "registrations", room.id));
+      await deleteDoc(doc(db, "registrations", `${room.id}_${user.uid}`));
+
+      await setDoc(
+        doc(db, "studyRooms", room.id),
+        { currentParticipants: increment(-1) },
+        { merge: true }
+      );
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        { roomsLeft: increment(1) },
+        { merge: true }
+      );
+
+      setLocalCurrent((c) => Math.max(c - 1, 0));
+      setRegistered(false);
+      setPopup("❎ You have unenrolled.");
+    } catch (err) {
+      console.error("🔥 Unenroll error:", err);
+      setPopup("❌ " + (err.message || "Unenroll failed"));
     }
   };
 
@@ -155,15 +230,19 @@ function RoomCard({ room, user, userDoc, index }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.1 }}
       whileHover={{ scale: 1.03, y: -4 }}
-      className="relative bg-[#0d1117] border border-[#00c3ff33] rounded-2xl 
-                 shadow-[0_0_12px_#00c3ff22] hover:shadow-[0_0_20px_#00c3ff44] 
-                 transition overflow-hidden flex flex-col min-h-[340px]"
+      className="relative bg-[#0d1117] border border-[#00c3ff33] rounded-2xl shadow-[0_0_12px_#00c3ff22] hover:shadow-[0_0_20px_#00c3ff44] transition overflow-hidden flex flex-col min-h-[340px]"
     >
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#00c3ff] to-[#007bbd] p-5 text-black font-semibold flex items-center justify-between">
-        <h2 className="text-lg font-bold truncate">{room.title}</h2>
+      <div className="bg-gradient-to-r from-[#00c3ff] to-[#007bbd] p-5 text-black font-semibold">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold truncate">{room.title}</h2>
+          <span className="text-sm bg-white/30 text-black px-2 py-0.5 rounded-full">
+            {String(localCurrent).padStart(2, "0")}/
+            {String(totalSlots).padStart(2, "0")}
+          </span>
+        </div>
         <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+          className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-semibold ${
             status === "Upcoming"
               ? "bg-yellow-400 text-black"
               : status === "Live"
@@ -177,9 +256,10 @@ function RoomCard({ room, user, userDoc, index }) {
 
       {/* Body */}
       <div className="p-6 flex-1 flex flex-col">
-        <p className="text-sm text-gray-300 mb-4 line-clamp-4">{room.description}</p>
+        <p className="text-sm text-gray-300 mb-4 line-clamp-4">
+          {room.description}
+        </p>
 
-        {/* Date & Time */}
         <div className="flex items-center gap-4 text-sm text-gray-400 mb-6">
           <span className="flex items-center gap-1">
             <Calendar size={16} /> {room.date}
@@ -189,23 +269,28 @@ function RoomCard({ room, user, userDoc, index }) {
           </span>
         </div>
 
-        {/* Buttons */}
+        {/* Register / Unenroll buttons */}
         {status === "Upcoming" && !registered && (
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={handleRegisterClick}
-            className="w-full py-3 rounded-xl bg-[#00c3ff] text-black font-semibold shadow-[0_0_10px_#00c3ff66] hover:brightness-110 transition"
+            onClick={!isFull ? handleRegisterClick : null}
+            disabled={isFull}
+            className={`w-full py-3 rounded-xl font-semibold transition ${
+              isFull
+                ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                : "bg-[#00c3ff] text-black shadow-[0_0_10px_#00c3ff66] hover:brightness-110"
+            }`}
           >
-            Register
+            {isFull ? "Group Full" : "Register"}
           </motion.button>
         )}
 
         {status === "Upcoming" && registered && (
           <button
-            disabled
-            className="w-full py-3 rounded-xl bg-gray-600 text-gray-300 cursor-not-allowed"
+            onClick={handleUnenroll}
+            className="w-full py-3 rounded-xl bg-red-600 text-white hover:bg-red-700"
           >
-            Link active 5 mins before start
+            Unenroll
           </button>
         )}
 
@@ -229,10 +314,10 @@ function RoomCard({ room, user, userDoc, index }) {
           </button>
         )}
 
-        {/* Step Popups */}
+        {/* Confirmation Steps */}
         {step === 1 && (
           <div className="mt-4 p-4 border border-[#00c3ff33] rounded-lg bg-[#0a0f1a] text-sm text-gray-200">
-            Are you sure you want to register? <br />
+            Are you sure you want to register?<br />
             Rooms left: {roomsLeft}
             <div className="mt-3 flex gap-3">
               <button
@@ -256,7 +341,7 @@ function RoomCard({ room, user, userDoc, index }) {
             <p className="font-medium mb-2">📜 Terms & Conditions</p>
             <ul className="list-disc ml-5 text-xs space-y-1 text-gray-400">
               <li>Obey instructor’s rules</li>
-              <li>Be calm and respectful</li>
+              <li>Be respectful</li>
               <li>Violation = removal + 5 rooms deducted</li>
             </ul>
             <label className="flex items-center gap-2 mt-3 text-xs">
@@ -265,7 +350,7 @@ function RoomCard({ room, user, userDoc, index }) {
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
               />
-              I agree to the terms & conditions
+              I agree to the terms
             </label>
             <div className="mt-3 flex gap-3">
               <button
@@ -277,7 +362,7 @@ function RoomCard({ room, user, userDoc, index }) {
                     : "bg-gray-600 text-gray-400 cursor-not-allowed"
                 }`}
               >
-                Confirm & Register
+                Confirm
               </button>
               <button
                 onClick={() => setStep(0)}
@@ -289,12 +374,10 @@ function RoomCard({ room, user, userDoc, index }) {
           </div>
         )}
 
-        {/* Popup */}
         {popup && (
           <motion.p
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
             className="mt-4 text-sm text-green-400 flex items-center gap-1"
           >
             <CheckCircle size={14} /> {popup}
@@ -302,7 +385,6 @@ function RoomCard({ room, user, userDoc, index }) {
         )}
       </div>
 
-      {/* Footer countdown */}
       {status === "Upcoming" && (
         <div className="absolute bottom-3 right-3 text-xs text-gray-400 flex items-center gap-1">
           <AlertCircle size={12} /> Starts at {room.time}
