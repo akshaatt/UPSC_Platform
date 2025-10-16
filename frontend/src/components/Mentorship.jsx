@@ -1,3 +1,4 @@
+// src/pages/Mentorship.jsx
 import React from "react";
 import { motion } from "framer-motion";
 import { UserCheck, Target, BarChart3, Video, Lock } from "lucide-react";
@@ -29,128 +30,166 @@ export default function Mentorship() {
     );
 
   return (
-    <section className="relative py-24 px-6 bg-white text-gray-900 overflow-hidden">
-      {/* Decorative gradient blobs */}
-      <div className="absolute top-0 -left-16 w-72 h-72 bg-gradient-to-r from-cyan-200 via-blue-100 to-transparent blur-3xl opacity-60 rounded-full animate-pulse" />
-      <div className="absolute bottom-0 -right-20 w-72 h-72 bg-gradient-to-l from-cyan-100 via-blue-50 to-transparent blur-3xl opacity-60 rounded-full animate-pulse" />
+    <section className="relative min-h-screen bg-white text-gray-900 overflow-hidden">
+      {/* ✨ Animated soft gradient background */}
+      <motion.div
+        className="absolute inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(circle at 20% 30%, rgba(6,182,212,0.08), transparent 50%), radial-gradient(circle at 80% 70%, rgba(37,99,235,0.08), transparent 50%)",
+        }}
+        animate={{
+          backgroundPosition: ["0% 0%", "100% 100%", "0% 0%"],
+        }}
+        transition={{
+          duration: 20,
+          ease: "easeInOut",
+          repeat: Infinity,
+        }}
+      />
 
-      <div className="max-w-7xl mx-auto relative z-10 text-center">
-        {/* HEADER */}
-        <motion.h2
-          initial={{ opacity: 0, y: -20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
-          viewport={{ once: true }}
-          className="text-4xl md:text-5xl font-extrabold mb-6 bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent"
-        >
-          Personal Mentorship Program
-        </motion.h2>
+      {/* 🌫️ Floating glow particles */}
+      {[...Array(6)].map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute rounded-full bg-gradient-to-r from-cyan-100 to-blue-100 opacity-50 blur-2xl"
+          style={{
+            width: Math.random() * 80 + 60,
+            height: Math.random() * 80 + 60,
+            top: `${Math.random() * 100}%`,
+            left: `${Math.random() * 100}%`,
+          }}
+          animate={{
+            y: [0, -20, 0],
+            opacity: [0.4, 0.7, 0.4],
+          }}
+          transition={{
+            duration: 8 + Math.random() * 6,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.1 }}
-          viewport={{ once: true }}
-          className="max-w-3xl mx-auto text-gray-600 mb-12 text-lg"
-        >
-          Designed exclusively for our premium learners — get{" "}
-          <b>individual attention</b>, weekly progress tracking, and actionable
-          insights to ensure your UPSC preparation is focused and effective.
-        </motion.p>
-
-        {loading ? (
-          <p className="text-gray-500">Checking access...</p>
-        ) : !isAllowed ? (
+      {/* MAIN CONTENT */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-20">
+        {/* HERO SECTION */}
+        <div className="grid lg:grid-cols-2 gap-16 items-center mb-20">
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-gray-100 border border-gray-200 inline-flex items-center gap-2 px-5 py-3 rounded-xl text-gray-600 font-medium shadow-sm"
+            transition={{ duration: 0.8 }}
           >
-            <Lock size={18} className="text-cyan-500" />
-            Unlock this feature with <span className="font-semibold">a Subscription</span> plan
-          </motion.div>
-        ) : (
-          <>
-            {/* FEATURES GRID */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.8 }}
-              viewport={{ once: true }}
-              className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12 mt-12"
-            >
-              <FeatureCard
-                icon={<UserCheck size={28} />}
-                title="1-on-1 Mentorship"
-                desc="Get personalized guidance from experienced mentors who understand your preparation style."
-                delay={0.1}
-              />
-              <FeatureCard
-                icon={<Target size={28} />}
-                title="Custom Strategy"
-                desc="Weekly strategy calls to help you focus on high-priority topics & weak areas."
-                delay={0.2}
-              />
-              <FeatureCard
-                icon={<BarChart3 size={28} />}
-                title="Performance Review"
-                desc="Detailed feedback on your test performance and study discipline."
-                delay={0.3}
-              />
-              <FeatureCard
-                icon={<Video size={28} />}
-                title="Interactive Sessions"
-                desc="Join 1 to 1 live mentoring for motivation and doubt clearance."
-                delay={0.4}
-              />
-            </motion.div>
+            <h1 className="text-5xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6">
+              Personal Mentorship <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-600">
+                for UPSC Aspirants
+              </span>
+            </h1>
+            <p className="text-gray-600 text-lg mb-8 leading-relaxed">
+              One-on-one strategic mentorship for dedicated learners. 
+              Weekly reviews, custom roadmaps, and expert feedback — everything 
+              to elevate your UPSC preparation experience.
+            </p>
 
-            {/* CTA CARD */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8 }}
-              viewport={{ once: true }}
-              className="max-w-3xl mx-auto bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-100 p-8 rounded-2xl shadow-lg hover:shadow-xl transition text-center"
-            >
-              <h3 className="text-2xl font-bold mb-3 text-cyan-700">
-                Ready to Accelerate Your Journey?
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Book your first session and begin a guided roadmap toward
-                success with Satyapath mentors.
-              </p>
+            {loading ? (
+              <p className="text-gray-500">Checking access...</p>
+            ) : !isAllowed ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="inline-flex items-center gap-3 px-6 py-3 bg-gray-100 border border-gray-200 rounded-2xl text-gray-700 font-medium shadow-sm"
+              >
+                <Lock size={20} className="text-cyan-500" />
+                Unlock with a{" "}
+                <span className="font-semibold text-cyan-600">
+                  Premium Plan
+                </span>
+              </motion.div>
+            ) : (
               <motion.a
                 href="/mentorship"
                 whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="inline-block bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-8 py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all"
+                whileTap={{ scale: 0.97 }}
+                className="inline-block bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-10 py-4 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all"
               >
-                Book Mentorship Now
+                Book Your Session
               </motion.a>
-            </motion.div>
-          </>
-        )}
+            )}
+          </motion.div>
+
+          {/* ✅ RIGHT SIDE HERO IMAGE BOX */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1 }}
+            className="relative flex items-center justify-center"
+          >
+            <div className="w-auto h-auto bg-gradient-to-br from-cyan-50 via-blue-50 to-white border border-cyan-100 shadow-[0_8px_40px_rgba(6,182,212,0.15)] rounded-3xl overflow-hidden flex items-center justify-center">
+              <motion.img
+                src="/assets/satyapath-logo.png"
+                alt="Satyapath Logo"
+                className="w-96 opacity-80"
+                animate={{
+                  y: [0, -8, 0],
+                  opacity: [0.9, 1, 0.9],
+                }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+            </div>
+          </motion.div>
+        </div>
+
+        {/* FEATURE GRID */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          transition={{ duration: 0.8 }}
+          className="grid md:grid-cols-2 lg:grid-cols-4 gap-8"
+        >
+          <FeatureCard
+            icon={<UserCheck size={30} />}
+            title="1-on-1 Mentorship"
+            desc="Get personalized guidance from experts who know the UPSC pattern inside out."
+          />
+          <FeatureCard
+            icon={<Target size={30} />}
+            title="Custom Study Strategy"
+            desc="Tailored plans for your strengths and weaknesses with consistent follow-ups."
+          />
+          <FeatureCard
+            icon={<BarChart3 size={30} />}
+            title="Progress Analytics"
+            desc="Visualize your weekly progress with data-driven insights and test analysis."
+          />
+          <FeatureCard
+            icon={<Video size={30} />}
+            title="Interactive Sessions"
+            desc="Live 1:1 mentor calls — discuss strategy, improve focus, and stay accountable."
+          />
+        </motion.div>
       </div>
     </section>
   );
 }
 
 /* 🔹 Feature Card Component */
-function FeatureCard({ icon, title, desc, delay }) {
+function FeatureCard({ icon, title, desc }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay }}
-      viewport={{ once: true }}
-      className="p-6 rounded-2xl bg-white border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] transition transform hover:-translate-y-1"
+      whileHover={{ y: -5, boxShadow: "0 10px 25px rgba(6,182,212,0.12)" }}
+      transition={{ duration: 0.3 }}
+      className="p-8 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all text-left"
     >
-      <div className="w-12 h-12 flex items-center justify-center bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl mb-4 mx-auto shadow-md">
+      <div className="w-14 h-14 flex items-center justify-center bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl mb-5 shadow-lg">
         {icon}
       </div>
-      <h4 className="text-lg font-semibold text-gray-800 mb-2">{title}</h4>
-      <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
+      <h4 className="text-lg font-semibold text-gray-900 mb-2">{title}</h4>
+      <p className="text-gray-600 text-sm leading-relaxed">{desc}</p>
     </motion.div>
   );
 }

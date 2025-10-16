@@ -1,26 +1,40 @@
 import React, { useEffect, useState } from "react";
-import { auth, db, DEFAULT_AVATAR, storage } from "../firebase";
-import { onAuthStateChanged, signOut, updateProfile } from "firebase/auth";
+import { auth, db, DEFAULT_AVATAR } from "../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
   onSnapshot,
-  setDoc,
-  serverTimestamp,
-  getDoc,
+  collection,
+  getDocs,
+  updateDoc,
 } from "firebase/firestore";
-import {
-  ref as storageRef,
-  uploadBytesResumable,
-  getDownloadURL,
-} from "firebase/storage";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaClock, FaCrown, FaPhoneAlt, FaHome, FaUpload, FaCheckCircle } from "react-icons/fa";
+import {
+  FaClock,
+  FaCrown,
+  FaPhoneAlt,
+  FaHome,
+  FaUpload,
+  FaCheckCircle,
+  FaStar,
+} from "react-icons/fa";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
-// Helper for plan durations
+/* ----------------------------
+   Helpers for Plan & Duration
+----------------------------- */
 const PLAN_DURATION = {
-  safalta: 30, // days
-  shikhar: 150, // 5 months
-  samarpan: 365, // 1 year
+  safalta: 30,
+  shikhar: 150,
+  samarpan: 365,
 };
 
 function calcExpiry(startDate, plan) {
@@ -30,281 +44,273 @@ function calcExpiry(startDate, plan) {
   return d;
 }
 
-export default function Profile() {
-  const [user, setUser] = useState(null);
-  const [userDoc, setUserDoc] = useState(null);
-  const [dailyTime, setDailyTime] = useState(0); // seconds
+function formatDuration(seconds) {
+  const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const s = String(seconds % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
 
-  // Upload state
-  const [uploading, setUploading] = useState(false);
-  const [uploadPct, setUploadPct] = useState(0);
+/* ----------------------------
+   Helpers for Chart & Dates
+----------------------------- */
+function toKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function toLabel(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${day}/${m}`;
+}
+function lastNDays(n) {
+  const today = new Date();
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    out.push({ dateObj: d, key: toKey(d), label: toLabel(d) });
+  }
+  return out;
+}
+
+/* ----------------------------
+   Main Component
+----------------------------- */
+export default function Profile({ dailyActiveTime = 0 }) {
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [usageData, setUsageData] = useState([]);
+  const [loadingChart, setLoadingChart] = useState(true);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [showSavedPopup, setShowSavedPopup] = useState(false);
 
-  // Track auth + userDoc
+  // 🔹 Auth & user data listener
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
         const ref = doc(db, "users", u.uid);
         const unsubDoc = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
-            setUserDoc(snap.data());
+            setUserData({ uid: u.uid, ...snap.data() });
           }
         });
         return () => unsubDoc();
       } else {
-        setUserDoc(null);
+        setUserData(null);
       }
     });
-    return () => unsubAuth();
+    return () => unsub();
   }, []);
 
-  // Load today’s usage from Firestore when user logs in
+  // 🔹 Fetch daily usage (last 30 days)
   useEffect(() => {
-    if (!user) return;
-    const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
+    async function fetchUsageStats() {
+      if (!userData?.uid) return;
+      setLoadingChart(true);
+      try {
+        const usageRef = collection(db, "users", userData.uid, "dailyUsage");
+        const snap = await getDocs(usageRef);
+        const map = new Map();
+        snap.forEach((doc) => {
+          const { seconds = 0 } = doc.data();
+          map.set(doc.id, seconds);
+        });
 
-    const fetchAndListen = async () => {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        setDailyTime(snap.data().seconds || 0);
-      } else {
-        setDailyTime(0);
+        const days = lastNDays(30);
+        const series = days.map(({ key, label }) => ({
+          date: label,
+          hours: (map.get(key) || 0) / 3600, // convert seconds → hours
+        }));
+
+        setUsageData(series);
+      } catch (e) {
+        console.error("Usage fetch error:", e);
+        setUsageData(lastNDays(30).map(({ label }) => ({ date: label, hours: 0 })));
+      } finally {
+        setLoadingChart(false);
       }
-
-      // live listener
-      onSnapshot(ref, (docSnap) => {
-        if (docSnap.exists()) {
-          setDailyTime(docSnap.data().seconds || 0);
-        }
-      });
-    };
-
-    fetchAndListen();
-  }, [user]);
-
-  // Increment timer every second + save to Firestore
-  useEffect(() => {
-    if (!user) return;
-    const ref = doc(db, "dailyUsage", `${user.uid}_${todayKey()}`);
-
-    const interval = setInterval(() => {
-      setDailyTime((prev) => {
-        const updated = prev + 1;
-
-        setDoc(
-          ref,
-          {
-            uid: user.uid,
-            date: todayKey(),
-            seconds: updated,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-
-        return updated;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [user]);
-
-  if (!user) {
-    return (
-      <div className="pt-24 flex justify-center items-center min-h-screen">
-        <p className="text-gray-500">Please login to view profile.</p>
-      </div>
-    );
-  }
-
-  const plan = userDoc?.plan;
-  const planStart = userDoc?.planStart;
-  const expiryDate = calcExpiry(planStart, plan);
-
-  // ✅ Always prefer Firestore photoURL first
-  const avatarSrc = userDoc?.photoURL || user?.photoURL || DEFAULT_AVATAR;
-
-  // Handle image file selection + upload
-  const onFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file (jpg, png, webp).");
-      return;
     }
+
+    fetchUsageStats();
+  }, [userData]);
+
+  // 🔹 Upload logic
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !userData?.uid) return;
     try {
-      setUploading(true);
-      setUploadPct(0);
-
-      const ext = file.name.split(".").pop() || "jpg";
-      const ref = storageRef(storage, `avatars/${user.uid}.${ext}`);
-
-      const task = uploadBytesResumable(ref, file);
-      task.on("state_changed", (snap) => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setUploadPct(pct);
+      await updateDoc(doc(db, "users", userData.uid), {
+        photoURL: preview,
       });
-
-      await task;
-      const url = await getDownloadURL(ref);
-
-      // ✅ Update Firebase Auth profile
-      await updateProfile(user, { photoURL: url });
-
-      // ✅ Update Firestore doc
-      await setDoc(
-        doc(db, "users", user.uid),
-        { photoURL: url, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-
-      // ✅ Force local state update so UI refreshes instantly
-      setUserDoc((prev) => ({ ...prev, photoURL: url }));
-
       setShowSavedPopup(true);
-      setTimeout(() => setShowSavedPopup(false), 1800);
-    } catch (err) {
-      console.error("Upload error:", err);
-      alert("Failed to upload image. Please try again.");
-    } finally {
-      setUploading(false);
-      setUploadPct(0);
+      setTimeout(() => setShowSavedPopup(false), 2000);
+    } catch (error) {
+      console.error("Upload error:", error);
     }
   };
 
+  // 🔹 Derived info
+  const plan = userData?.plan;
+  const planStart = userData?.planStart;
+  const expiryDate = calcExpiry(planStart, plan);
+  const avatarSrc = preview || userData?.photoURL || DEFAULT_AVATAR;
+
+  if (!userData)
+    return (
+      <div className="pt-24 flex justify-center items-center min-h-screen bg-black text-gray-400">
+        <p>Please login to view profile.</p>
+      </div>
+    );
+
+  /* ----------------------------
+      RENDER SECTION
+  ----------------------------- */
   return (
-    <div className="relative bg-gray-50 dark:bg-gray-900 min-h-screen">
-      {/* Banner */}
-      <div className="relative h-56 w-full overflow-hidden bg-gradient-to-br from-[#0090DE] to-[#001726]">
+    <div className="relative bg-[#0A0A0A] min-h-screen text-gray-200 pt-20 pb-20">
+      <div className="absolute inset-0 -z-10">
         <motion.div
-          className="absolute -bottom-20 left-10 w-72 h-72 bg-white/20 rounded-full blur-3xl"
-          animate={{ x: [0, 12, 0], y: [0, -10, 0] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute -top-24 right-10 w-96 h-96 bg-[#0090DE]/30 rounded-full blur-3xl"
-          animate={{ x: [0, -14, 0], y: [0, 8, 0] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute top-0 left-1/3 w-96 h-96 bg-blue-700/20 rounded-full blur-3xl"
+          animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
+          transition={{ duration: 10, repeat: Infinity }}
         />
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 -mt-24">
-        {/* Profile Card */}
+      <div className="max-w-6xl mx-auto px-6">
+        {/* --- Profile Card --- */}
         <motion.div
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 relative overflow-visible"
+          className="bg-[#101010] border border-blue-900/40 rounded-2xl shadow-[0_0_30px_rgba(0,191,255,0.15)] p-6 text-center"
           initial={{ y: 16, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6 }}
         >
-          {/* Avatar + Upload */}
-          <div className="flex flex-col items-center -mt-16">
-            <motion.img
-              src={avatarSrc}
-              alt="Profile"
-              className="w-32 h-32 rounded-full border-4 border-white dark:border-gray-800 object-cover shadow-lg"
-              onError={(e) => {
-                e.currentTarget.src = DEFAULT_AVATAR;
-              }}
-              whileHover={{ scale: 1.05, rotate: 1.5 }}
-              transition={{ type: "spring", stiffness: 220 }}
-            />
+          <motion.img
+            src={avatarSrc}
+            alt="Profile"
+            className="w-32 h-32 rounded-full border-4 border-blue-500 object-cover mx-auto shadow-[0_0_30px_rgba(0,191,255,0.4)]"
+            onError={(e) => (e.currentTarget.src = DEFAULT_AVATAR)}
+            whileHover={{ scale: 1.05 }}
+          />
 
-            {/* Upload control */}
-            <label className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-full cursor-pointer hover:brightness-110 transition">
-              <FaUpload />
-              <span>Upload New Photo</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onFileChange}
-              />
+          <h1 className="mt-4 text-2xl font-bold text-blue-400">
+            {userData.displayName || userData.name || "User"}
+          </h1>
+          <p className="text-gray-400">{userData.email || user?.email}</p>
+
+          {plan && (
+            <div className="mt-3 inline-flex items-center gap-2 bg-blue-900/20 text-blue-300 border border-blue-700/30 px-4 py-1 rounded-full text-sm font-semibold">
+              <FaCrown className="text-yellow-400" />
+              {plan.charAt(0).toUpperCase() + plan.slice(1)} Plan
+            </div>
+          )}
+
+          {/* Upload Section */}
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <label className="cursor-pointer bg-blue-700/30 px-4 py-2 rounded-lg hover:bg-blue-700/50 transition">
+              <FaUpload className="inline mr-2" />
+              Choose Photo
+              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
             </label>
-            {uploading && (
-              <div className="mt-2 w-56 h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#0090DE] transition-all"
-                  style={{ width: `${uploadPct}%` }}
-                />
-              </div>
+            {selectedFile && (
+              <button
+                onClick={handleUpload}
+                className="bg-blue-500 text-white px-4 py-1 rounded-md hover:bg-blue-600 transition"
+              >
+                Upload
+              </button>
             )}
-
-            <h1 className="mt-4 text-2xl font-bold text-gray-800 dark:text-white">
-              {user.displayName || userDoc?.firstName || "User"}
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
-
-            {/* Subscription Plan */}
-            {plan && (
-              <div className="mt-3 px-4 py-1 rounded-full text-sm font-semibold shadow-sm flex items-center gap-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-gray-800 dark:text-gray-200">
-                <FaCrown className="text-yellow-500" />
-                {plan.charAt(0).toUpperCase() + plan.slice(1)} Plan
-              </div>
-            )}
-
-            <button
-              onClick={() => signOut(auth)}
-              className="mt-4 px-5 py-2 bg-[#0090DE] text-white rounded-full hover:bg-[#007bbd] transition"
-            >
-              Sign Out
-            </button>
           </div>
 
-          {/* Details */}
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
-                <FaPhoneAlt /> Phone Number
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.phone || "Not added"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
-                <FaHome /> Address
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.address || "Not added"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                Plan Start Date
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {userDoc?.planStart
-                  ? userDoc.planStart.toDate().toDateString()
-                  : "Not available"}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-xl shadow-sm">
-              <h3 className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                Plan Expiry Date
-              </h3>
-              <p className="text-gray-800 dark:text-white font-medium">
-                {expiryDate ? expiryDate.toDateString() : "Not available"}
-              </p>
-            </div>
+          {/* Info Section */}
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+            <InfoCard icon={<FaPhoneAlt />} title="Phone Number" value={userData.phone} />
+            <InfoCard icon={<FaHome />} title="Address" value={userData.address} />
+            <InfoCard
+              title="Plan Start Date"
+              value={planStart ? planStart.toDate().toDateString() : "Not available"}
+            />
+            <InfoCard
+              title="Plan Expiry Date"
+              value={expiryDate ? expiryDate.toDateString() : "Not available"}
+            />
           </div>
 
-          {/* Daily Usage Tracker */}
-          <div className="mt-8 p-6 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-gray-700 dark:to-gray-800 rounded-xl shadow-lg text-center">
-            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 flex items-center justify-center gap-2">
-              <FaClock /> Daily Usage Time
+          {/* Daily Active Time */}
+          <div className="mt-8 p-6 bg-[#0F0F0F] border border-blue-900/30 rounded-xl shadow-inner">
+            <h3 className="text-lg font-semibold text-blue-400 flex items-center justify-center gap-2">
+              <FaClock /> Daily Active Time
             </h3>
-            <p className="mt-2 text-2xl font-bold text-[#0090DE] font-mono">
-              {formatDuration(dailyTime)}
+            <p className="mt-2 text-2xl font-bold text-blue-500 font-mono">
+              {formatDuration(dailyActiveTime)}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Tracked from 00:00 hrs – 24:00 hrs
-            </p>
+            <p className="text-xs text-gray-500 mt-1">(Resets automatically at midnight)</p>
           </div>
+        </motion.div>
+
+        {/* --- Usage Chart --- */}
+        <motion.div
+          className="mt-10 bg-[#111]/80 border border-blue-900/40 rounded-xl p-6"
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+        >
+          <h2 className="text-lg font-semibold text-blue-400 mb-4">Daily Usage (Last 30 Days)</h2>
+          <div className="w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={usageData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis
+                  label={{
+                    value: "Hours",
+                    angle: -90,
+                    position: "insideLeft",
+                    fill: "#9CA3AF",
+                  }}
+                />
+                <Tooltip formatter={(v) => `${v.toFixed(2)} hrs`} />
+                <Line
+                  type="monotone"
+                  dataKey="hours"
+                  stroke="#00BFFF"
+                  strokeWidth={3}
+                  dot={{ r: 3 }}
+                  isAnimationActive
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {loadingChart && <p className="text-sm text-gray-500 mt-3">Loading chart…</p>}
+        </motion.div>
+
+        {/* --- Stars Section --- */}
+        <motion.div
+          className="mt-10 bg-[#111]/80 border border-blue-900/40 rounded-xl p-6 text-center"
+          initial={{ y: 16, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+        >
+          <h2 className="text-lg font-semibold text-blue-400 mb-4">Your Star Rating</h2>
+          <div className="flex justify-center gap-2 text-3xl">
+            {[...Array(5)].map((_, i) => (
+              <FaStar key={i} className={i < 3 ? "text-yellow-400" : "text-gray-600"} />
+            ))}
+          </div>
+          <p className="mt-3 text-gray-500 text-sm">
+            Complete more tasks to earn stars 🌟
+          </p>
         </motion.div>
       </div>
 
-      {/* Saved popup */}
+      {/* ✅ Popup */}
       <AnimatePresence>
         {showSavedPopup && (
           <motion.div
@@ -318,13 +324,11 @@ export default function Profile() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.85, opacity: 0 }}
               transition={{ duration: 0.25 }}
-              className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl text-center"
+              className="bg-[#111] border border-blue-900/30 p-6 rounded-2xl shadow-2xl text-center"
             >
               <FaCheckCircle className="mx-auto text-emerald-500 mb-2" size={48} />
-              <h4 className="text-lg font-semibold text-gray-800 dark:text-white">
-                Profile photo updated!
-              </h4>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
+              <h4 className="text-lg font-semibold text-gray-200">Profile photo updated!</h4>
+              <p className="text-sm text-gray-400">
                 Your new picture is now visible across Satyapath.
               </p>
             </motion.div>
@@ -335,18 +339,16 @@ export default function Profile() {
   );
 }
 
-/* helpers */
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function formatDuration(seconds) {
-  const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
-  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
-  const s = String(seconds % 60).padStart(2, "0");
-  return `${h}:${m}:${s}`;
+/* ----------------------------
+   Helper UI Component
+----------------------------- */
+function InfoCard({ icon, title, value }) {
+  return (
+    <div className="p-4 bg-[#0F0F0F] border border-blue-900/30 rounded-xl hover:shadow-[0_0_15px_rgba(0,191,255,0.15)] transition-all">
+      <h3 className="text-sm text-gray-400 mb-1 flex items-center gap-2">
+        {icon} {title}
+      </h3>
+      <p className="text-gray-100 font-medium">{value || "Not added"}</p>
+    </div>
+  );
 }

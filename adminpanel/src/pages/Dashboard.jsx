@@ -59,6 +59,7 @@ import {
 // 🔹 Tabs
 const tabs = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
+  { key: "reels", label: "Add Reels", icon: Video },
   { key: "queries", label: "User Queries", icon: MessageCircle },
   { key: "plans", label: "Subscription Plans", icon: Crown },
   { key: "mentorship", label: "Mentorship", icon: Users },
@@ -137,6 +138,7 @@ export default function Dashboard() {
             transition={{ duration: 0.25 }}
           >
             {active === "overview" && <Overview />}
+            {active === "reels" && <ReelsAdmin />}
             {active === "queries" && <QueriesAdmin />}
             {active === "plans" && <PlansAdmin />}
             {active === "mentorship" && <MentorshipAdmin />} {/* ✅ NEW */}
@@ -3385,6 +3387,194 @@ function MentorshipAdmin() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+/*-------------------------------------------------------------------------------*/
+/* ---------------------------
+   Component: Reels Admin
+----------------------------*/
+function ReelsAdmin() {
+  const [file, setFile] = useState(null);
+  const [title, setTitle] = useState("");
+  const [topic, setTopic] = useState("");
+  const [msg, setMsg] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [reels, setReels] = useState([]);
+  const storage = getStorage();
+
+  // 🔹 Realtime fetch of existing reels
+  useEffect(() => {
+    const q = query(collection(db, "reels"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setReels(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  // 🔹 Upload new reel with progress
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!file || !title || !topic)
+      return setMsg("⚠️ Please fill all fields before uploading.");
+
+    setUploading(true);
+    setMsg("");
+    setProgress(0);
+
+    try {
+      const path = `reels/${Date.now()}-${file.name}`;
+      const refFile = ref(storage, path);
+      const uploadTask = uploadBytesResumable(refFile, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snap) => {
+          const pct = Math.round(
+            (snap.bytesTransferred / snap.totalBytes) * 100
+          );
+          setProgress(pct);
+        },
+        (err) => {
+          setMsg("❌ Upload failed: " + err.message);
+          setUploading(false);
+        },
+        async () => {
+          const videoUrl = await getDownloadURL(refFile);
+          await addDoc(collection(db, "reels"), {
+            title,
+            topic,
+            videoUrl,
+            likeCount: 0,
+            createdAt: serverTimestamp(),
+          });
+          setMsg("✅ Reel uploaded successfully!");
+          setUploading(false);
+          setProgress(0);
+          setFile(null);
+          setTitle("");
+          setTopic("");
+        }
+      );
+    } catch (err) {
+      setMsg("❌ Unexpected error: " + err.message);
+      setUploading(false);
+    }
+  };
+
+  // 🔹 Delete a reel (both Firestore + Storage)
+  const handleDelete = async (reel) => {
+    if (!window.confirm("Delete this reel permanently?")) return;
+    try {
+      const fileRef = ref(storage, reel.videoUrl);
+      await deleteObject(fileRef).catch(() => {});
+      await deleteDoc(doc(db, "reels", reel.id));
+      setMsg("🗑️ Reel deleted successfully.");
+    } catch (err) {
+      setMsg("❌ Delete failed: " + err.message);
+    }
+  };
+
+  return (
+    <div className="bg-gray-900 p-6 rounded-xl space-y-8 text-white">
+      <h2 className="text-2xl font-bold text-cyan-400">🎬 Manage Reels</h2>
+
+      {/* Upload Form */}
+      <form onSubmit={handleUpload} className="space-y-4">
+        <input
+          type="text"
+          placeholder="Reel Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full p-3 rounded bg-gray-800 text-white focus:ring-2 focus:ring-cyan-500 outline-none"
+        />
+        <input
+          type="text"
+          placeholder="Topic / Category"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          className="w-full p-3 rounded bg-gray-800 text-white focus:ring-2 focus:ring-cyan-500 outline-none"
+        />
+        <input
+          type="file"
+          accept="video/*"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 
+                     file:rounded file:border-0 file:text-sm file:font-semibold 
+                     file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+        />
+
+        {/* Progress Bar */}
+        {uploading && (
+          <div className="mt-3">
+            <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-2 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-200 ease-out"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-cyan-400 mt-2 text-center">
+              Uploading... {progress}%
+            </p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={uploading}
+          className={`px-5 py-3 rounded text-white font-semibold ${
+            uploading
+              ? "bg-gray-500 cursor-not-allowed"
+              : "bg-cyan-600 hover:bg-cyan-700"
+          }`}
+        >
+          {uploading ? `Uploading ${progress}%` : "Upload Reel"}
+        </button>
+
+        {msg && <p className="text-sm mt-2 text-cyan-400">{msg}</p>}
+      </form>
+
+      {/* Existing Reels List */}
+      <div>
+        <h3 className="text-xl font-semibold mt-10 mb-4 text-cyan-300">
+          Existing Reels ({reels.length})
+        </h3>
+
+        {reels.length === 0 ? (
+          <p className="text-gray-400">No reels uploaded yet.</p>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {reels.map((r) => (
+              <div
+                key={r.id}
+                className="bg-gray-800 rounded-lg p-4 flex flex-col space-y-3 shadow-lg border border-gray-700 hover:border-cyan-600 transition"
+              >
+                <video
+                  src={r.videoUrl}
+                  className="rounded-md max-h-56 object-cover"
+                  controls
+                />
+                <div>
+                  <p className="text-lg font-semibold">{r.title}</p>
+                  <p className="text-sm text-gray-400">{r.topic}</p>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">
+                    ❤️ {r.likeCount || 0} likes
+                  </span>
+                  <button
+                    onClick={() => handleDelete(r)}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

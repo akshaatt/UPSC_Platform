@@ -21,6 +21,7 @@ function Navbar() {
   const [plan, setPlan] = useState(null);
   const navigate = useNavigate();
 
+  // 🔹 Firebase Auth & User Snapshot
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -40,6 +41,7 @@ function Navbar() {
     return () => unsubAuth();
   }, []);
 
+  // 🔹 Close dropdown on outside click
   useEffect(() => {
     const closeDropdown = (e) => {
       if (!e.target.closest(".dropdown")) setDropdownOpen(false);
@@ -50,14 +52,22 @@ function Navbar() {
 
   const avatarSrc = user?.photoURL || userDoc?.photoURL || DEFAULT_AVATAR;
 
+  // 🔹 Smooth scroll to section
   const scrollToSection = (id) => {
     const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      // If the user is on a different page, go home first
+      navigate("/");
+      setTimeout(() => {
+        const section = document.getElementById(id);
+        if (section) section.scrollIntoView({ behavior: "smooth" });
+      }, 600);
     }
   };
 
-  // 🔹 Handle Exclusive Notes click
+  // 🔹 Exclusive Notes Access Control
   const handleExclusiveClick = () => {
     if (plan === "samarpan") {
       navigate("/exclusive-notes");
@@ -69,7 +79,7 @@ function Navbar() {
   return (
     <nav className="bg-black shadow-md shadow-gray-800/40 fixed w-full top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        {/* Logo */}
+        {/* 🌟 Logo */}
         <h1
           className="text-2xl font-bold cursor-pointer"
           style={{ color: "#0090DE" }}
@@ -78,12 +88,20 @@ function Navbar() {
           Satyapath
         </h1>
 
-        {/* Links */}
+        {/* 🔗 Navigation Links */}
         <div className="hidden md:flex space-x-8 text-white font-medium items-center">
-          <button type="button" onClick={() => scrollToSection("studyRoomsPreview")} className="hover:text-[#0090DE] transition">
-            Rooms
+          <button
+            type="button"
+            onClick={() => scrollToSection("mentorship-section")}
+            className="hover:text-[#0090DE] transition"
+          >
+            Mentorship
           </button>
-          <button type="button" onClick={() => scrollToSection("dailyExam")} className="hover:text-[#0090DE] transition">
+          <button
+            type="button"
+            onClick={() => scrollToSection("dailyExam")}
+            className="hover:text-[#0090DE] transition"
+          >
             Daily Quiz
           </button>
           <button
@@ -93,7 +111,11 @@ function Navbar() {
           >
             <Crown size={16} /> Exclusive Notes
           </button>
-          <button type="button" onClick={() => setIsContactOpen(true)} className="hover:text-[#0090DE] transition">
+          <button
+            type="button"
+            onClick={() => setIsContactOpen(true)}
+            className="hover:text-[#0090DE] transition"
+          >
             Contact Us
           </button>
           <button
@@ -110,7 +132,7 @@ function Navbar() {
           </button>
         </div>
 
-        {/* Auth / Dropdown */}
+        {/* 👤 Auth or Dropdown */}
         {user ? (
           <div className="relative dropdown">
             <button
@@ -148,16 +170,29 @@ function Navbar() {
                     </div>
                   )}
 
-                  <button onClick={() => { navigate("/dashboard"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
-                    Dashboard
-                  </button>
-                  <button onClick={() => { navigate("/profile"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+              
+                  <button
+                    onClick={() => {
+                      navigate("/profile");
+                      setDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
                     Profile
                   </button>
-                  <button onClick={() => { navigate("/library"); setDropdownOpen(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <button
+                    onClick={() => {
+                      navigate("/library");
+                      setDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
                     Library
                   </button>
-                  <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <button
+                    onClick={() => signOut(auth)}
+                    className="w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
                     Sign Out
                   </button>
                 </motion.div>
@@ -176,12 +211,18 @@ function Navbar() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* 🔸 Modals */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-      <SubscriptionPopup isOpen={isSubscriptionOpen} onClose={() => setIsSubscriptionOpen(false)} />
-      <ContactUsModal open={isContactOpen} onClose={() => setIsContactOpen(false)} />
+      <SubscriptionPopup
+        isOpen={isSubscriptionOpen}
+        onClose={() => setIsSubscriptionOpen(false)}
+      />
+      <ContactUsModal
+        open={isContactOpen}
+        onClose={() => setIsContactOpen(false)}
+      />
 
-      {/* Exclusive Popup */}
+      {/* 🔸 Exclusive Notes Restriction Popup */}
       <AnimatePresence>
         {exclusivePopup && (
           <motion.div
@@ -228,14 +269,19 @@ function Navbar() {
   );
 }
 
-/* Helper */
+/* 🔹 Helper for Plan Title */
 function titleFromKey(key) {
   switch (key) {
-    case "lakshya": return "Lakshya";
-    case "safalta": return "Safalta";
-    case "shikhar": return "Shikhar";
-    case "samarpan": return "Samarpan";
-    default: return "Unknown";
+    case "lakshya":
+      return "Lakshya";
+    case "safalta":
+      return "Safalta";
+    case "shikhar":
+      return "Shikhar";
+    case "samarpan":
+      return "Samarpan";
+    default:
+      return "Unknown";
   }
 }
 
